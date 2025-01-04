@@ -503,7 +503,7 @@ def timeit(func):
 
 
 def define_mask_rectangle_in_image(
-        image, rectangle_width, rectangle_height, center_point, angle
+    image, rectangle_width, rectangle_height, center_point, angle
 ):
     """In a rectangle, after rotating counterclockwise degree θ from the center point, the points coordinates are:
     x′ = (x0 － xcenter) cosθ － (y0 － ycenter) sinθ ＋ xcenter;
@@ -553,14 +553,14 @@ def define_mask_rectangle_in_image(
         points[1] = image_height - points[1]
         # Convert image coordinates to plane coordinates
         rotated_rectangle_points_x = (
-                (points[0] - center_point[0]) * np.cos(np.pi / 180.0 * angle)
-                - (points[1] - center_point[1]) * np.sin(np.pi / 180.0 * angle)
-                + center_point[0]
+            (points[0] - center_point[0]) * np.cos(np.pi / 180.0 * angle)
+            - (points[1] - center_point[1]) * np.sin(np.pi / 180.0 * angle)
+            + center_point[0]
         )
         rotated_rectangle_points_y = (
-                (points[0] - center_point[0]) * np.sin(np.pi / 180.0 * angle)
-                + (points[1] - center_point[1]) * np.cos(np.pi / 180.0 * angle)
-                + center_point[1]
+            (points[0] - center_point[0]) * np.sin(np.pi / 180.0 * angle)
+            + (points[1] - center_point[1]) * np.cos(np.pi / 180.0 * angle)
+            + center_point[1]
         )
         # Convert plane coordinates to image coordinates
         rotated_rectangle_points_y = image_height - rotated_rectangle_points_y

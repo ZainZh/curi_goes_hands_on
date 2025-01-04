@@ -21,7 +21,11 @@ if err != sl.ERROR_CODE.SUCCESS:
 
 # Get camera information (serial number)
 zed_serial = zed.get_camera_information().serial_number
-print_info("Hello! I am connected successfully, This is my serial number: {}".format(zed_serial))
+print_info(
+    "Hello! I am connected successfully, This is my serial number: {}".format(
+        zed_serial
+    )
+)
 
 # Close the camera
 zed.close()

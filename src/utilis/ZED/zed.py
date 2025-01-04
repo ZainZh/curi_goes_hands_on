@@ -76,9 +76,9 @@ class ZED(object):
             self.zed.retrieve_measure(depth_map, sl.MEASURE.DEPTH)
             self.zed.retrieve_measure(point_cloud, sl.MEASURE.XYZRGBA)
             if is_save:
-                image.write(f'{self.image_save_path}/Image.png')
-                depth_map.write(f'{self.image_save_path}/Depth.png')
-                point_cloud.write(f'{self.image_save_path}/Pointcloud.ply')
+                image.write(f"{self.image_save_path}/Image.png")
+                depth_map.write(f"{self.image_save_path}/Depth.png")
+                point_cloud.write(f"{self.image_save_path}/Pointcloud.ply")
                 print_info("Image files saving succeed")
 
             return image, depth_map, point_cloud

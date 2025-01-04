@@ -15,5 +15,4 @@ function_map = {
     "Ultra": sl.DEPTH_MODE.ULTRA,
     "Quality": sl.DEPTH_MODE.QUALITY,
     "Performance": sl.DEPTH_MODE.PERFORMANCE,
-
 }
