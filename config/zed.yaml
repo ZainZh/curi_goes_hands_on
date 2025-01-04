@@ -1,0 +1,9 @@
+resolution: HD1080 # sl.RESOLUTION.HD720, sl.RESOLUTION.HD1080, sl.RESOLUTION.HD2K, sl.RESOLUTION.VGA
+
+fps: 30 # 15, 30, 60
+
+# from the better one to the fast one: Neural, Ultra, Quality, Performance
+# Neural mode requires a trained model, but fail to download it. So use Ultra mode instead.
+depth_mode: Ultra
+
+image_save_path: "../../../assets/images/"

@@ -6,7 +6,7 @@
 
 # @Description : TODO
 
-from src.curi_goes_hands_on.curi_goes_hands_on import CuriGoesHandsOn
+from curi_goes_hands_on import CuriGoesHandsOn
 if __name__ == "__main__":
     curi_goes_hands_on = CuriGoesHandsOn()
     curi_goes_hands_on.run()
