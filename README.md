@@ -15,3 +15,8 @@ The repo only tested on the following environment:
 ## Installation
 1. Install the ZED SDK
 > Please follow the instructions on the [official website](https://www.stereolabs.com/docs/installation/linux) to install the ZED SDK.
+
+
+## Acknowledgement
+We would like to thank the following projects for their contributions:
+1. [Rofunc](https://github.com/Skylark0924/Rofunc）
