@@ -6,8 +6,8 @@ sim_device: 'cuda:0'
 
 cam_pos: [-3.0, 0.0, 2.0]
 cam_target: [0.0, 0.0, 1.0]
-
-env:
+asset_root: "/home/clover/curi_goes_hands_on/assets"
+envs:
   numEnvs: 1
   envSpacing: 1.5
   numEnvPerRow: 1
@@ -21,7 +21,7 @@ env:
   # to anything > 0 will disable all self collisions.
   collision_mode: -1
 
-  asset:
+  assets:
     robot_name: "CURI"
     assetRoot:
 #    assetFile: "urdf/curi/urdf/curi_isaacgym_dual_arm.urdf"
@@ -52,7 +52,7 @@ env:
 
 sim:
   dt: 0.0166 # 1/60
-  substeps: 1
+  sub_steps: 1
   up_axis: "Z"
   use_gpu_pipeline: False
   gravity: ${if:${eq:${.up_axis}, "Y"}, [0, -9.81, 0], [0, 0, -9.81]}

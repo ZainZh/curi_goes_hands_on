@@ -1,3 +1,12 @@
+name: BASE_SIM
+
+physics_engine: 'physx'  #  'physx' or 'flex'
+graphics_device_id: 0
+sim_device: 'cuda:0'
+
+cam_pos: [-3.0, 0.0, 2.0]
+cam_target: [0.0, 0.0, 1.0]
+
 sim:
   dt: 0.0166 # 1/60
   substeps: 1

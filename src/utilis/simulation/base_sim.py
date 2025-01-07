@@ -11,41 +11,56 @@ from PIL import Image as Im
 
 import rofunc as rf
 from rofunc.utils.logger.beauty_logger import beauty_print
-from utilis.common import load_omega_config
+from utilis.common import load_omega_config, print_info
 
 
 class BaseSim:
     def __init__(self, config="base_sim"):
+        # init_parameters
+        self.robot_asset_root = None
+        self.robot_asset_file = None
+        self.robot_name = None
+        self.robot_asset = None
+        self.envs = None
+        self.robot_handles = None
+        self.gym = None
+        self.sim_params = None
+        self.physics_engine = None
+
         self.config = load_omega_config(config)
         self.up_axis = None
+        self.asset_root = self.config["asset_root"]
         self.init_sim()
         self.init_viewer()
-        # self.init_plane()
-        self.init_terrain()
+        self.init_plane()
+        # self.init_terrain()
         self.init_light()
 
-    def init_sim(self):
-        self.up_axis = self.config.sim.up_axis.upper()
+    def __del__(self):
+        self.gym.destroy_viewer()
+        self.gym.destroy_sim()
 
+    def init_sim(self):
+        self.up_axis = self.config["sim"]["up_axis"].upper()
         # Initialize gym
         self.gym = gymapi.acquire_gym()
 
         # Configure sim
         self.sim_params = gymapi.SimParams()
-        self.sim_params.dt = self.config.sim.dt
-        self.sim_params.substeps = self.config.sim.substeps
-        self.sim_params.gravity = gymapi.Vec3(*self.config.sim.gravity)
+        self.sim_params.dt = self.config["sim"]["dt"]
+        self.sim_params.substeps = self.config["sim"]["sub_steps"]
+        self.sim_params.gravity = gymapi.Vec3(*self.config["sim"]["gravity"])
         self.sim_params.up_axis = (
             gymapi.UP_AXIS_Y if self.up_axis == "Y" else gymapi.UP_AXIS_Z
         )
 
-        if self.config.physics_engine == "flex":
+        if self.config["physics_engine"] == "flex":
             self.physics_engine = gymapi.SIM_FLEX
             for flex_param in self.config.sim.flex:
                 setattr(
                     self.config.sim.flex, flex_param, self.config.sim.flex[flex_param]
                 )
-        elif self.config.physics_engine == "physx":
+        elif self.config["physics_engine"] == "physx":
             self.physics_engine = gymapi.SIM_PHYSX
             for physx_param in self.config.sim.physx:
                 setattr(
@@ -150,11 +165,6 @@ class BaseSim:
         self.gym.set_light_parameters(self.sim, 0, l_color, l_ambient, l_direction)
 
     def add_object(self):
-        from isaacgym import gymapi
-
-        asset_root = self.config.env.object_asset.assetRoot or os.path.join(
-            rf.oslab.get_rofunc_path(), "simulator/assets"
-        )
         asset_files = self.config.env.object_asset.assetFiles
 
         asset_options = gymapi.AssetOptions()
@@ -175,11 +185,13 @@ class BaseSim:
         self.object_assets = []
         for asset_file in asset_files:
             beauty_print(
-                "Loading object asset {} from {}".format(asset_file, asset_root),
+                "Loading object asset {} from {}".format(asset_file, self.asset_root),
                 type="info",
             )
             self.object_assets.append(
-                self.gym.load_asset(self.sim, asset_root, asset_file, asset_options)
+                self.gym.load_asset(
+                    self.sim, self.asset_root, asset_file, asset_options
+                )
             )
 
         self.object_idxs = []
@@ -228,6 +240,7 @@ class BaseSim:
                 env_ptr, self.table_asset, table_pose, "table", i, 0, 0
             )
 
+
 class RobotSim(BaseSim):
     def __init__(self, config):
         """
@@ -236,52 +249,103 @@ class RobotSim(BaseSim):
         :param config: config file
         """
         super().__init__(f"robots/{config}")
-        self.num_envs = self.config.env.numEnvs
-        self.num_envs_per_row = self.config.env.numEnvPerRow
-        self.robot_controller = self.config.env.controller_type
-        self.collision_mode = self.config.env.collision_mode
+        self.num_envs = self.config["envs"]["numEnvs"]
+        self.num_envs_per_row = self.config["envs"]["numEnvPerRow"]
+        self.robot_controller = self.config["envs"]["controller_type"]
+        self.collision_mode = self.config["envs"]["collision_mode"]
+
         self.create_env()
         self.setup_robot_dof_prop()
-
-        if self.config.env.object_asset is not None:
+        if self.config["envs"]["object_asset"] is not None:
             self.add_object()
-        if hasattr(self.config.env, "table"):
-            if self.config.env.table is not None:
+        if hasattr(self.config["envs"], "table"):
+            if self.config["envs"]["table"] is not None:
                 self.add_table()
 
+    def setup_robot_dof_prop(self):
+        robot_dof_props = self.gym.get_asset_dof_properties(self.robot_asset)
+        robot_lower_limits = robot_dof_props["lower"]
+        robot_upper_limits = robot_dof_props["upper"]
+        robot_dof_props["stiffness"][:] = 300
+        robot_dof_props["damping"][:] = 30
+        robot_dof_props["driveMode"][:].fill(gymapi.DOF_MODE_POS)
+
+        # # default dof states and position targets
+        # robot_num_dofs = gym.get_asset_dof_count(robot_asset)
+        # default_dof_pos = np.zeros(robot_num_dofs, dtype=np.float32)
+        # # default_dof_pos[:] = robot_mids[:]
+        #
+        # default_dof_state = np.zeros(robot_num_dofs, gymapi.DofState.dtype)
+        # default_dof_state["pos"] = default_dof_pos
+
+        for env, robot_handle in zip(self.envs, self.robot_handles):
+            # set dof properties
+            self.gym.set_actor_dof_properties(env, robot_handle, robot_dof_props)
+
+            # # set initial dof states
+            # self.gym.set_actor_dof_states(env, robot_handle, self.default_dof_state, gymapi.STATE_ALL)
+            #
+            # # set initial position targets
+            # self.gym.set_actor_dof_position_targets(env, robot_handle, default_dof_pos)
+
+    def get_dof_info(self):
+        # Gets number of Degree of Freedom for an actor
+        dof_count = self.gym.get_actor_dof_count(self.envs[0], self.robot_handles[0])
+        # maps degree of freedom names to actor-relative indices
+        dof_dict = self.gym.get_actor_dof_dict(self.envs[0], self.robot_handles[0])
+        # Gets forces for the actor’s degrees of freedom
+        # dof_forces = self.gym.get_actor_dof_forces(self.envs[0], self.robot_handles[0])
+        # Gets Frames for Degrees of Freedom of actor
+        # dof_frames = self.gym.get_actor_dof_frames(self.envs[0], self.robot_handles[0])
+        # Gets names of all degrees of freedom on actor
+        dof_names = self.gym.get_actor_dof_names(self.envs[0], self.robot_handles[0])
+        # Gets target position for the actor’s degrees of freedom.
+        # dof_position_targets = self.gym.get_actor_dof_position_targets(self.envs[0], self.robot_handles[0])
+        # Gets properties for all Dofs on an actor.
+        dof_properties = self.gym.get_actor_dof_properties(
+            self.envs[0], self.robot_handles[0]
+        )
+        # Gets state for the actor’s degrees of freedom
+        # dof_states = self.gym.get_actor_dof_states(self.envs[0], self.robot_handles[0], gymapi.STATE_ALL)
+        # Gets target velocity for the actor’s degrees of freedom
+        # dof_velocity_targets = self.gym.get_actor_dof_velocity_targets(self.envs[0], self.robot_handles[0])
+
+        return {
+            "dof_count": dof_count,
+            "dof_dict": dof_dict,
+            "dof_names": dof_names,
+            "dof_properties": dof_properties,
+        }
+
     def create_env(self):
-        from isaacgym import gymapi
-
         # Load urdf asset
-        self.robot_asset_root = self.config.env.asset.assetRoot or os.path.join(
-            rf.oslab.get_rofunc_path(), "simulator/assets"
-        )
-        self.robot_asset_file = self.config.env.asset.assetFile
-
+        self.robot_asset_root = self.asset_root
+        self.robot_asset_file = self.config["envs"]["assets"]["assetFile"]
         asset_options = gymapi.AssetOptions()
-        asset_options.fix_base_link = self.config.env.asset.fix_base_link
-        asset_options.disable_gravity = self.config.env.asset.disable_gravity
-        asset_options.flip_visual_attachments = (
-            self.config.env.asset.flip_visual_attachments
-        )
-        asset_options.armature = self.config.env.asset.armature
-        asset_options.slices_per_cylinder = self.config.env.asset.slices_per_cylinder
+        asset_options.fix_base_link = self.config["envs"]["assets"]["fix_base_link"]
+        asset_options.disable_gravity = self.config["envs"]["assets"]["disable_gravity"]
+        asset_options.flip_visual_attachments = self.config["envs"]["assets"][
+            "flip_visual_attachments"
+        ]
+        asset_options.armature = self.config["envs"]["assets"]["armature"]
+        asset_options.slices_per_cylinder = self.config["envs"]["assets"][
+            "slices_per_cylinder"
+        ]
 
-        init_pose = self.config.env.asset.init_pose
-        self.robot_name = self.config.env.asset.robot_name
+        init_pose = self.config["envs"]["assets"]["init_pose"]
+        self.robot_name = self.config["envs"]["assets"]["robot_name"]
 
-        beauty_print(
+        print_info(
             "Loading urdf asset {} from {}".format(
                 self.robot_asset_file, self.robot_asset_root
-            ),
-            type="info",
+            )
         )
         self.robot_asset = self.gym.load_asset(
             self.sim, self.robot_asset_root, self.robot_asset_file, asset_options
         )
 
         # Set up the env grid
-        spacing = self.config.env.envSpacing
+        spacing = self.config["envs"]["envSpacing"]
         env_lower = gymapi.Vec3(-spacing, 0.0, -spacing)
         env_upper = gymapi.Vec3(spacing, spacing, spacing)
 
@@ -329,115 +393,6 @@ class RobotSim(BaseSim):
         self.robot_handles = robot_handles
 
         # self._set_color()
-
-    def set_colors_for_parts(self, handles, wb_decompose_param_rb_ids):
-        # colors = [[255 / 255., 165 / 255., 0 / 255.], [0.54, 0.85, 0.2], [0.5, 0.5, 0.5], [0.35, 0.35, 0.35]]
-        # colors = np.array(
-        #     [[0.54 * 255, 0.85 * 255, 0.2 * 255], (210, 105, 30), (106, 90, 205), (138, 43, 226),
-        #      (135, 206, 250), (70, 130, 180), (72, 209, 204), (139, 69, 19), (238, 130, 238),
-        #      (221, 160, 221), (218, 112, 214), (188, 143, 143), (119, 136, 153),
-        #      (153, 50, 204)]) / 255
-
-        # (238, 130, 238)
-        colors = (
-            np.array(
-                [[0.54 * 255, 0.85 * 255, 0.2 * 255], (218, 112, 214), (210, 105, 30)]
-            )
-            / 255
-        )
-        # color_list_used = colors[np.random.randint(0, len(colors), size=len(wb_decompose_param_rb_ids))]
-        for part_i in range(self.num_parts):
-            self.set_char_color(
-                handles, wb_decompose_param_rb_ids[part_i], colors[part_i]
-            )
-
-    def set_char_color(self, handles, body_ids, col):
-        """
-        Set the color of the character's body parts
-
-        :param body_ids: list of body ids
-        :param col: color in RGB
-        :return:
-        """
-        from isaacgym import gymapi
-
-        if isinstance(body_ids, int):
-            body_ids = np.arange(body_ids)
-        for i, env_ptr in enumerate(self.envs):
-            handle = handles[i]
-            for j in body_ids:
-                self.gym.set_rigid_body_color(
-                    env_ptr,
-                    handle,
-                    j,
-                    gymapi.MESH_VISUAL,
-                    gymapi.Vec3(col[0], col[1], col[2]),
-                )
-
-    def _set_color(self):
-        from isaacgym import gymapi
-
-        self.num_bodies = self.gym.get_asset_rigid_body_count(self.robot_asset)
-        col = np.array([70, 70, 70]) / 255
-        for i in range(self.num_envs):
-            env_ptr = self.envs[i]
-            handle = self.robot_handles[i]
-            for j in range(self.num_bodies):
-                self.gym.set_rigid_body_color(
-                    env_ptr,
-                    handle,
-                    j,
-                    gymapi.MESH_VISUAL,
-                    gymapi.Vec3(col[0], col[1], col[2]),
-                )
-
-    def setup_robot_dof_prop(self):
-        from isaacgym import gymapi
-
-        gym = self.gym
-        envs = self.envs
-        robot_asset = self.robot_asset
-        robot_handles = self.robot_handles
-
-        # configure urdf dofs
-        robot_dof_props = gym.get_asset_dof_properties(robot_asset)
-        robot_lower_limits = robot_dof_props["lower"]
-        robot_upper_limits = robot_dof_props["upper"]
-        robot_ranges = robot_upper_limits - robot_lower_limits
-        robot_mids = 0.3 * (robot_upper_limits + robot_lower_limits)
-
-        robot_dof_props["driveMode"][:].fill(gymapi.DOF_MODE_POS)
-        # if "stiffness" not in robot_dof_props.dtype.names:
-        #     robot_dof_props["stiffness"][:] = 300
-        #     robot_dof_props["damping"][:] = 30
-        # elif robot_dof_props["stiffness"][0] == 0:
-        #     robot_dof_props["stiffness"][:] = 300
-        #     robot_dof_props["damping"][:] = 30
-        robot_dof_props["stiffness"][:] = 300
-        robot_dof_props["damping"][:] = 30
-
-        # default dof states and position targets
-        robot_num_dofs = gym.get_asset_dof_count(robot_asset)
-        default_dof_pos = np.zeros(robot_num_dofs, dtype=np.float32)
-        # default_dof_pos[:] = robot_mids[:]
-
-        default_dof_state = np.zeros(robot_num_dofs, gymapi.DofState.dtype)
-        default_dof_state["pos"] = default_dof_pos
-
-        # # send to torch
-        # default_dof_pos_tensor = to_torch(default_dof_pos, device=device)
-
-        for env, robot_handle in zip(envs, robot_handles):
-            # set dof properties
-            gym.set_actor_dof_properties(env, robot_handle, robot_dof_props)
-
-            # set initial dof states
-            gym.set_actor_dof_states(
-                env, robot_handle, default_dof_state, gymapi.STATE_ALL
-            )
-
-            # set initial position targets
-            gym.set_actor_dof_position_targets(env, robot_handle, default_dof_pos)
 
     def _init_attractor(self, attracted_rigid_body, attr_type=None, verbose=True):
         """
@@ -549,7 +504,6 @@ class RobotSim(BaseSim):
             axes_geoms.append(axes_geom)
             sphere_geoms.append(sphere_geom)
         return attr_rbs, attractor_handles, axes_geoms, sphere_geoms
-
 
     def add_tracking_target_sphere_axes(self):
         """
