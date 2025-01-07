@@ -94,44 +94,6 @@ def get_ros_param(name, value=None, verbose_level=2):
         return value
 
 
-def to_list(values):
-    """Convert a series of values in various structure to a plain python list.
-
-    Args:
-        values (PoseStamped|Pose|Quaternion|list|tuple|np.ndarray): A data structure containing values to be
-                                                                    put into a list.
-
-    Returns:
-        (list): A list of plain python number types.
-
-    Raises:
-        NotImplementedError: If the input type is not supported.
-    """
-    if isinstance(values, PoseStamped):
-        output = to_list(values.pose)
-    elif isinstance(values, Pose):
-        output = [
-            values.position.x,
-            values.position.y,
-            values.position.z,
-            values.orientation.x,
-            values.orientation.y,
-            values.orientation.z,
-            values.orientation.w,
-        ]
-    elif isinstance(values, Quaternion):
-        output = [values.x, values.y, values.z, values.w]
-    elif isinstance(values, list) or isinstance(values, tuple):
-        output = list(values)
-    elif isinstance(values, np.ndarray):
-        output = values.tolist()
-    else:
-        raise NotImplementedError(
-            "Type {} cannot be converted to list".format(type(values))
-        )
-    return output
-
-
 def omega_to_list(omega):
     """Put a set of values given in a OmegaConfig into a list.
 
@@ -192,24 +154,6 @@ def update_omega_config(config_name, key, value):
     OmegaConf.save(loaded, f=config_file)
 
 
-def init_socket(ip, port):
-    """Initialize a socket connection.
-
-    Args:
-        ip (str): IP for the socket server.
-        port (int): Port of the server that receives the connection.
-
-    Returns:
-        (socket.socket): The socket object.
-    """
-    socket_client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    print_info("Connecting to socket server {}:{} ...".format(ip, port))
-    # If the connection cannot be made, raise OSError
-    socket_client.connect((ip, port))
-    print_info("Socket connected on {}:{}".format(ip, port))
-    return socket_client
-
-
 def sd_position(position):
     """Standardize a position-like object to a (3,) ndarray whose elements represent x, y, and z.
 
@@ -235,23 +179,6 @@ def sd_position(position):
         return sd_position(np.array([position.x, position.y, position.z]))
     else:
         raise NotImplementedError
-
-
-def extend_right(s, max_length, filler=" "):
-    """Given a string with length l_0, fill 'spaces' to its right such that its length becomes max_length.
-    If l_0 > max_length,  no space will be filled and its length will be unchanged.
-
-    Args:
-        s (str): A string.
-        max_length (int): Length of the output string.
-        filler (str): A string to be filled on the right side of s, default space.
-
-    Returns:
-        (str)
-    """
-    return "{message:{filler}<{width}}".format(
-        message=s, filler=filler, width=max_length
-    )
 
 
 def pretty_print_configs(cfgs):
@@ -448,42 +375,6 @@ def get_image_hwc(image):
     return h, w, c
 
 
-def get_circle_centers_and_radii(img):
-    """Get the center position and radius of circles in a numpy image.
-
-    Args:
-        img (np.ndarray): The image.
-
-    Returns:
-        (np.ndarray, np.ndarray): The center positions (N, 2) in pixel coordinate system for N circles;
-                                  The radii (N, ) in pixel coordinate system for N circles.
-    """
-    assert isinstance(img, np.ndarray), print_error(
-        f"Image type is not ndarray but {type(img)}"
-    )
-    centers = []
-    radii = []
-    gray_img = cv.medianBlur(cv.cvtColor(img, cv.COLOR_BGR2GRAY), 5)
-    rows, columns, _ = get_image_hwc(gray_img)
-    circles = cv.HoughCircles(
-        gray_img,
-        cv.HOUGH_GRADIENT,
-        1,
-        rows / 8,
-        param1=100,
-        param2=30,
-        minRadius=80,
-        maxRadius=300,
-    )
-    if circles is not None:
-        circles = np.uint16(np.around(circles))
-        for circle in circles[0, :]:
-            centers.append([circle[0], circle[1]])
-            radii.append([circle[2]])
-        return centers, radii
-    return None, None
-
-
 def timeit(func):
     """A timer decorator."""
 
@@ -500,145 +391,6 @@ def timeit(func):
         return result
 
     return timeit_wrapper
-
-
-def define_mask_rectangle_in_image(
-    image, rectangle_width, rectangle_height, center_point, angle
-):
-    """In a rectangle, after rotating counterclockwise degree θ from the center point, the points coordinates are:
-    x′ = (x0 － xcenter) cosθ － (y0 － ycenter) sinθ ＋ xcenter;
-    y′ = (x0 － xcenter) sinθ ＋ (y0 － ycenter) cosθ ＋ ycenter;
-
-    In opencv coordinate, the functions are refactored as
-    x′ = (x0 － xcenter) cos(pi/180*θ) － (y0 － ycenter) sin(pi/180*θ) ＋ xcenter;
-    y0 = row -y0
-    ycenter = row -ycenter
-    y′ = (x0 － xcenter) sin(pi/180*θ) ＋ (y0 － ycenter) cos(pi/180*θ) ＋ ycenter;
-    y' = row - y'
-
-    Args:
-        image (np.ndarray): The image.
-        rectangle_width (int): The width of the targeted rectangle.
-        rectangle_height (int): The height of the targeted rectangle.
-        center_point (list): The center point of the targeted rectangle.
-        angle (float): The Rotation angle
-
-    Returns:
-        mask_rectangle: Mask of the targeted rectangle.
-    """
-    image_height, image_width, _ = get_image_hwc(image)
-    mask_rectangle = np.zeros((image_height, image_width), dtype="uint8")
-    rectangle_pts = np.array(
-        [
-            [
-                center_point[0] - rectangle_height / 2,
-                center_point[1] - rectangle_width / 2,
-            ],
-            [
-                center_point[0] + rectangle_height / 2,
-                center_point[1] - rectangle_width / 2,
-            ],
-            [
-                center_point[0] + rectangle_height / 2,
-                center_point[1] + rectangle_width / 2,
-            ],
-            [
-                center_point[0] - rectangle_height / 2,
-                center_point[1] + rectangle_width / 2,
-            ],
-        ],
-    )
-    center_point[1] = image_height - center_point[1]
-    for i, points in enumerate(rectangle_pts):
-        points[1] = image_height - points[1]
-        # Convert image coordinates to plane coordinates
-        rotated_rectangle_points_x = (
-            (points[0] - center_point[0]) * np.cos(np.pi / 180.0 * angle)
-            - (points[1] - center_point[1]) * np.sin(np.pi / 180.0 * angle)
-            + center_point[0]
-        )
-        rotated_rectangle_points_y = (
-            (points[0] - center_point[0]) * np.sin(np.pi / 180.0 * angle)
-            + (points[1] - center_point[1]) * np.cos(np.pi / 180.0 * angle)
-            + center_point[1]
-        )
-        # Convert plane coordinates to image coordinates
-        rotated_rectangle_points_y = image_height - rotated_rectangle_points_y
-        rectangle_pts[i] = [
-            int(rotated_rectangle_points_x),
-            int(rotated_rectangle_points_y),
-        ]
-    rectangle_pts = np.array(rectangle_pts, dtype=np.int32)
-    cv.fillPoly(mask_rectangle, pts=[rectangle_pts], color=(1, 1, 1))
-
-    return mask_rectangle
-
-
-def append_two_dim_dict(target_dict, parent_key, child_key, child_value):
-    """Append the two dim val into a dictionary
-
-    Args:
-        target_dict (dict): Dict
-        parent_key: The first dim key
-        child_key: The second dim key
-        child_value:
-
-    Returns:
-        dict: {key_parent:{key_child:val}}
-    """
-    if parent_key in target_dict:
-        target_dict[parent_key].update({child_key: child_value})
-    else:
-        target_dict.update({parent_key: {child_key: child_value}})
-
-
-def get_patch_mask_bbox(mask):
-    """Get the patch mask and bounding box from the image mask.
-
-    Args:
-        mask (list[list[bool|int]]):mask for the whole image with values be 0 (not masked) or 1 (masked).
-               The derived mask is a (image_height, image_width) list.
-
-    Returns:
-        patch_mask (list[list[bool|int]]):Mask for the patch image with values be 0 (not masked) or 1 (masked).
-
-        patch_bbox (list[list[bool|int]]):BBox list for the patch image. The list format is
-                                                [top_left_x, top_left_y, bottom_right_x, bottom_right_y]
-    """
-    foreground_mask_list = np.where(np.array(mask) > 0)
-    top_left_x = min(foreground_mask_list[1])
-    top_left_y = min(foreground_mask_list[0])
-    bottom_right_x = max(foreground_mask_list[1])
-    bottom_right_y = max(foreground_mask_list[0])
-    patch_bbox = [top_left_x, top_left_y, bottom_right_x, bottom_right_y]
-    patch_mask = mask[top_left_y:bottom_right_y, top_left_x:bottom_right_x]
-    return patch_mask, patch_bbox
-
-
-def find_two_masks_intersection_area(mask_a, mask_b):
-    """Finds whether there is overlapping between the two masks.
-    The return represents the number of pixels in the overlapped area.
-
-    Args:
-       mask_a (list[list[bool|int]]): Mask for the whole image with values be 0 (not masked) or 1 (masked).
-       mask_b (list[list[bool|int]]): Mask for the whole image with values be 0 (not masked) or 1 (masked).
-
-    Returns:
-       int: The number of pixels at the intersection of the two masks.
-    """
-    return get_mask_area(np.bitwise_and(mask_a, mask_b))
-
-
-def get_mask_area(mask):
-    """Acquire the number of pixels in the masked area.
-
-    Args:
-        mask (list[list[bool|int]]): The mask whose values are either 0 (not masked) or 1 (masked) for the entire image.
-
-    Returns:
-        int: The number of masked pixels.
-    """
-    return len(np.argwhere(mask == 1)[:, ::-1])
 
 
 def download_file(remote_url, local_path):
