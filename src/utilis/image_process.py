@@ -4,4 +4,4 @@
 # @Address  : clover Lab @ CUHK
 # @FileName : image_process.py
 
-# @Description : Use this script to process images to transform ZED images to more detailed information
+# @Description : Use this script to process image to transform ZED image to more detailed information

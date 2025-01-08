@@ -6,4 +6,4 @@ fps: 30 # 15, 30, 60
 # Neural mode requires a trained model, but fail to download it. So use Ultra mode instead.
 depth_mode: Ultra
 
-image_save_path: "../../../assets/images/"
+image_save_path: "../../../assets/image/"

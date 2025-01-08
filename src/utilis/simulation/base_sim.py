@@ -165,10 +165,10 @@ class BaseSim:
         self.gym.set_light_parameters(self.sim, 0, l_color, l_ambient, l_direction)
 
     def add_object(self):
-        asset_files = self.config.env.object_asset.assetFiles
+        asset_files = self.config["env"]["object_asset"]["assetFiles"]
 
         asset_options = gymapi.AssetOptions()
-        asset_options.fix_base_link = self.config.env.object_asset.fix_base_link
+        asset_options.fix_base_link = self.config["env"]["object_asset"]["fix_base_link"]
         asset_options.use_mesh_materials = True
         asset_options.mesh_normal_mode = gymapi.COMPUTE_PER_VERTEX
         asset_options.override_com = True
@@ -179,8 +179,8 @@ class BaseSim:
         asset_options.vhacd_params.resolution = 100000
         asset_options.default_dof_drive_mode = gymapi.DOF_MODE_NONE
 
-        init_poses = self.config.env.object_asset.init_poses
-        object_names = self.config.env.object_asset.object_names
+        init_poses = self.config["env"]["object_asset"]["init_poses"]
+        object_names = self.config["env"]["object_asset"]["object_names"]
 
         self.object_assets = []
         for asset_file in asset_files:
@@ -227,7 +227,7 @@ class BaseSim:
         init_pose = self.config.env.table.init_pose
 
         asset_options = gymapi.AssetOptions()
-        asset_options.fix_base_link = self.config.env.table.fix_base_link
+        asset_options.fix_base_link = self.config["env"]["table"]["fix_base_link"]
         self.table_asset = self.gym.create_box(
             self.sim, table_size[0], table_size[1], table_size[2], asset_options
         )
@@ -253,7 +253,8 @@ class RobotSim(BaseSim):
         self.num_envs_per_row = self.config["envs"]["numEnvPerRow"]
         self.robot_controller = self.config["envs"]["controller_type"]
         self.collision_mode = self.config["envs"]["collision_mode"]
-
+        self.robot_stiffness = self.config["envs"]["assets"]["stiffness"]
+        self.robot_damping = self.config["envs"]["assets"]["damping"]
         self.create_env()
         self.setup_robot_dof_prop()
         if self.config["envs"]["object_asset"] is not None:
@@ -266,8 +267,8 @@ class RobotSim(BaseSim):
         robot_dof_props = self.gym.get_asset_dof_properties(self.robot_asset)
         robot_lower_limits = robot_dof_props["lower"]
         robot_upper_limits = robot_dof_props["upper"]
-        robot_dof_props["stiffness"][:] = 300
-        robot_dof_props["damping"][:] = 30
+        robot_dof_props["stiffness"][:] = self.robot_stiffness
+        robot_dof_props["damping"][:] = self.robot_damping
         robot_dof_props["driveMode"][:].fill(gymapi.DOF_MODE_POS)
 
         # # default dof states and position targets
@@ -316,6 +317,26 @@ class RobotSim(BaseSim):
             "dof_names": dof_names,
             "dof_properties": dof_properties,
         }
+
+    def monitor_actor_root_states(self):
+        from isaacgym import gymtorch
+
+        self._root_states = self.gym.acquire_actor_root_state_tensor(self.sim)
+        self.root_states = gymtorch.wrap_tensor(self._root_states)
+        self.default_root_states = self.root_states.clone()
+
+    def monitor_rigid_body_states(self):
+        from isaacgym import gymtorch
+
+        self._rb_states = self.gym.acquire_rigid_body_state_tensor(self.sim)
+        self.rb_states = gymtorch.wrap_tensor(self._rb_states)
+        self.default_rb_states = self.rb_states.clone()
+
+    def monitor_dof_states(self):
+        from isaacgym import gymtorch
+
+        self._dof_states = self.gym.acquire_dof_state_tensor(self.sim)
+        self.dof_states = gymtorch.wrap_tensor(self._dof_states)
 
     def create_env(self):
         # Load urdf asset
@@ -392,361 +413,6 @@ class RobotSim(BaseSim):
         self.envs = envs
         self.robot_handles = robot_handles
 
-        # self._set_color()
-
-    def _init_attractor(self, attracted_rigid_body, attr_type=None, verbose=True):
-        """
-        Initialize the attractor for tracking the trajectory using the embedded Isaac Gym PID controller
-
-        :param attracted_rigid_body: the joint to be attracted
-        :param attr_type: the type of the attractor
-        :param verbose: if True, visualize the attractor spheres
-        :return:
-        """
-        from isaacgym import gymapi
-        from isaacgym import gymutil
-
-        # Attractor setup
-        attractor_handles = []
-        attractor_properties = gymapi.AttractorProperties()
-        # Make attractor in all axes
-        attractor_properties.axes = attr_type
-        attractor_properties.stiffness = (
-            5e5
-            if attr_type == gymapi.AXIS_ALL or attr_type == gymapi.AXIS_TRANSLATION
-            else 5000
-        )
-        attractor_properties.damping = (
-            5e3
-            if attr_type == gymapi.AXIS_ALL or attr_type == gymapi.AXIS_TRANSLATION
-            else 500
-        )
-
-        # Create helper geometry used for visualization
-        # Create a wireframe axis
-        axes_geom = gymutil.AxesGeometry(0.1)
-        # Create a wireframe sphere
-        sphere_rot = gymapi.Quat.from_euler_zyx(0.5 * math.pi, 0, 0)
-        sphere_pose = gymapi.Transform(r=sphere_rot)
-        if attr_type == gymapi.AXIS_ALL:
-            sphere_geom = gymutil.WireframeSphereGeometry(
-                0.003, 12, 12, sphere_pose, color=(1, 0, 0)
-            )
-        elif attr_type == gymapi.AXIS_ROTATION:
-            sphere_geom = gymutil.WireframeSphereGeometry(
-                0.003, 12, 12, sphere_pose, color=(0, 1, 0)
-            )
-        elif attr_type == gymapi.AXIS_TRANSLATION:
-            sphere_geom = gymutil.WireframeSphereGeometry(
-                0.003, 12, 12, sphere_pose, color=(0, 0, 1)
-            )
-        else:
-            sphere_geom = gymutil.WireframeSphereGeometry(
-                0.003, 12, 12, sphere_pose, color=(1, 1, 1)
-            )
-
-        for i in range(len(self.envs)):
-            env = self.envs[i]
-            handle = self.robot_handles[i]
-
-            body_dict = self.gym.get_actor_rigid_body_dict(env, handle)
-            # beauty_print(f"get_actor_rigid_body_dict: {body_dict}")
-            props = self.gym.get_actor_rigid_body_states(env, handle, gymapi.STATE_POS)
-            attracted_rigid_body_handle = self.gym.find_actor_rigid_body_handle(
-                env, handle, attracted_rigid_body
-            )
-
-            # Initialize the attractor
-            attractor_properties.target = props["pose"][:][
-                body_dict[attracted_rigid_body]
-            ]
-            attractor_properties.rigid_handle = attracted_rigid_body_handle
-
-            if verbose:
-                # Draw axes and sphere at attractor location
-                gymutil.draw_lines(
-                    axes_geom, self.gym, self.viewer, env, attractor_properties.target
-                )
-                gymutil.draw_lines(
-                    sphere_geom, self.gym, self.viewer, env, attractor_properties.target
-                )
-
-            attractor_handle = self.gym.create_rigid_body_attractor(
-                env, attractor_properties
-            )
-            attractor_handles.append(attractor_handle)
-        return attractor_handles, axes_geom, sphere_geom
-
-    def _setup_attractors(self, traj, attr_rbs, attr_types, verbose=True):
-        """
-        Setup the attractors for tracking the trajectory using the embedded Isaac Gym PID controller
-
-        :param traj: the trajectory to be tracked
-        :param attr_rbs: link names to be attracted, same dim as traj
-        :param attr_types: the type of the attractors
-        :param verbose: if True, visualize the attractor spheres
-        :return:
-        """
-        assert isinstance(attr_rbs, list), "The attracted joints should be a list"
-        assert len(attr_rbs) == len(
-            traj
-        ), "The first dimension of trajectory should equal to attr_rbs"
-        assert len(attr_rbs) == len(
-            attr_types
-        ), "The first dimension of attr_types should equal to attr_rbs"
-
-        attractor_handles, axes_geoms, sphere_geoms = [], [], []
-        for i in range(len(attr_rbs)):
-            attractor_handle, axes_geom, sphere_geom = self._init_attractor(
-                attr_rbs[i], attr_type=attr_types[i], verbose=verbose
-            )
-            attractor_handles.append(attractor_handle)
-            axes_geoms.append(axes_geom)
-            sphere_geoms.append(sphere_geom)
-        return attr_rbs, attractor_handles, axes_geoms, sphere_geoms
-
-    def add_tracking_target_sphere_axes(self):
-        """
-        Visualize the tracking target as a sphere with axes
-        """
-        from isaacgym import gymapi, gymutil
-
-        # Create helper geometry used for visualization
-        # Create a wireframe axis
-        self.axes_geom = gymutil.AxesGeometry(0.1)
-        # Create a wireframe sphere
-        sphere_rot = gymapi.Quat.from_euler_zyx(0.5 * math.pi, 0, 0)
-        sphere_pose = gymapi.Transform(r=sphere_rot)
-        self.sphere_geom = gymutil.WireframeSphereGeometry(
-            0.03, 12, 12, sphere_pose, color=(1, 0, 0)
-        )
-
-    def add_marker(self, marker_pose):
-        from isaacgym import gymapi
-
-        asset_file = "mjcf/location_marker.urdf"
-
-        asset_options = gymapi.AssetOptions()
-        asset_options.angular_damping = 0.01
-        asset_options.linear_damping = 0.01
-        asset_options.max_angular_velocity = 100.0
-        asset_options.density = 1.0
-        asset_options.fix_base_link = True
-        asset_options.default_dof_drive_mode = gymapi.DOF_MODE_NONE
-
-        self._marker_asset = self.gym.load_asset(
-            self.sim, self.asset_root, asset_file, asset_options
-        )
-
-        self.marker_handles = []
-        for i in range(self.num_envs):
-            marker_handle = self.gym.create_actor(
-                self.envs[i], self._marker_asset, marker_pose, "marker", i, 2, 0
-            )
-            self.gym.set_rigid_body_color(
-                self.envs[i],
-                marker_handle,
-                0,
-                gymapi.MESH_VISUAL,
-                gymapi.Vec3(0.8, 0.0, 0.0),
-            )
-            self.marker_handles.append(marker_handle)
-
-    def add_body_attached_camera(
-        self, camera_props=None, attached_body=None, local_transform=None
-    ):
-        from isaacgym import gymapi
-
-        self.camera_handle = self.gym.create_camera_sensor(self.envs[0], camera_props)
-        body_handle = self.gym.find_actor_rigid_body_handle(
-            self.envs[0], self.robot_handles[0], attached_body
-        )
-        self.gym.attach_camera_to_body(
-            self.camera_handle,
-            self.envs[0],
-            body_handle,
-            local_transform,
-            gymapi.FOLLOW_TRANSFORM,
-        )
-
-    def monitor_rigid_body_states(self):
-        from isaacgym import gymtorch
-
-        self._rb_states = self.gym.acquire_rigid_body_state_tensor(self.sim)
-        self.rb_states = gymtorch.wrap_tensor(self._rb_states)
-        self.default_rb_states = self.rb_states.clone()
-
-    def monitor_actor_root_states(self):
-        from isaacgym import gymtorch
-
-        self._root_states = self.gym.acquire_actor_root_state_tensor(self.sim)
-        self.root_states = gymtorch.wrap_tensor(self._root_states)
-        self.default_root_states = self.root_states.clone()
-
-    def monitor_dof_states(self):
-        from isaacgym import gymtorch
-
-        self._dof_states = self.gym.acquire_dof_state_tensor(self.sim)
-        self.dof_states = gymtorch.wrap_tensor(self._dof_states)
-
-    def monitor_robot_jacobian(self, robot_name=None):
-        if robot_name is None:
-            robot_name = self.robot_name
-        from isaacgym import gymtorch
-
-        self._jacobian = self.gym.acquire_jacobian_tensor(self.sim, robot_name)
-        self.jacobian = gymtorch.wrap_tensor(self._jacobian)
-
-    def monitor_robot_mass_matrix(self, robot_name=None):
-        if robot_name is None:
-            robot_name = self.robot_name
-        from isaacgym import gymtorch
-
-        self._massmatrix = self.gym.acquire_mass_matrix_tensor(self.sim, robot_name)
-        self.massmatrix = gymtorch.wrap_tensor(self._massmatrix)
-
-    def show(self, visual_obs_flag=False):
-        """
-        Visualize the urdf in an interactive viewer
-        :param visual_obs_flag: If True, show the visual observation
-        """
-        from isaacgym import gymapi
-
-        beauty_print(
-            "Show the {} simulator in the interactive mode".format(self.robot_name),
-            type="module",
-        )
-
-        if visual_obs_flag:
-            fig = plt.figure("Visual observation", figsize=(8, 8))
-
-        while not self.gym.query_viewer_has_closed(self.viewer):
-            # Step the physics
-            self.gym.simulate(self.sim)
-            self.gym.fetch_results(self.sim, True)
-
-            # Step rendering
-            self.gym.step_graphics(self.sim)
-
-            if visual_obs_flag:
-                # digest image
-                self.gym.render_all_camera_sensors(self.sim)
-                self.gym.start_access_image_tensors(self.sim)
-
-                cam_img = self.gym.get_camera_image(
-                    self.sim, self.envs[0], self.camera_handle, gymapi.IMAGE_COLOR
-                ).reshape(1280, 1280, 4)
-                cam_img = Im.fromarray(cam_img)
-                plt.imshow(cam_img)
-                plt.axis("off")
-                plt.pause(1e-9)
-                fig.clf()
-
-                self.gym.end_access_image_tensors(self.sim)
-
-            self.gym.draw_viewer(self.viewer, self.sim, False)
-            self.gym.sync_frame_time(self.sim)
-
-        beauty_print("Done")
-        self.gym.destroy_viewer(self.viewer)
-        self.gym.destroy_sim(self.sim)
-
-    def get_num_bodies(self, robot_asset):
-        num_bodies = self.gym.get_asset_rigid_body_count(robot_asset)
-        beauty_print(
-            "The number of bodies in the urdf asset is {}".format(num_bodies),
-            type="info",
-        )
-        return num_bodies
-
-    def get_actor_rigid_body_info(self, actor_handle):
-        rigid_body_dict = self.gym.get_actor_rigid_body_dict(self.envs[0], actor_handle)
-        return rigid_body_dict
-
-    def get_dof_info(self):
-        # Gets number of Degree of Freedom for an actor
-        dof_count = self.gym.get_actor_dof_count(self.envs[0], self.robot_handles[0])
-        # maps degree of freedom names to actor-relative indices
-        dof_dict = self.gym.get_actor_dof_dict(self.envs[0], self.robot_handles[0])
-        # Gets forces for the actor’s degrees of freedom
-        # dof_forces = self.gym.get_actor_dof_forces(self.envs[0], self.robot_handles[0])
-        # Gets Frames for Degrees of Freedom of actor
-        # dof_frames = self.gym.get_actor_dof_frames(self.envs[0], self.robot_handles[0])
-        # Gets names of all degrees of freedom on actor
-        dof_names = self.gym.get_actor_dof_names(self.envs[0], self.robot_handles[0])
-        # Gets target position for the actor’s degrees of freedom.
-        # dof_position_targets = self.gym.get_actor_dof_position_targets(self.envs[0], self.robot_handles[0])
-        # Gets properties for all Dofs on an actor.
-        dof_properties = self.gym.get_actor_dof_properties(
-            self.envs[0], self.robot_handles[0]
-        )
-        # Gets state for the actor’s degrees of freedom
-        # dof_states = self.gym.get_actor_dof_states(self.envs[0], self.robot_handles[0], gymapi.STATE_ALL)
-        # Gets target velocity for the actor’s degrees of freedom
-        # dof_velocity_targets = self.gym.get_actor_dof_velocity_targets(self.envs[0], self.robot_handles[0])
-
-        return {
-            "dof_count": dof_count,
-            "dof_dict": dof_dict,
-            "dof_names": dof_names,
-            "dof_properties": dof_properties,
-        }
-
-    def get_robot_state(self, mode):
-        from isaacgym import gymtorch
-
-        if mode == "dof_force":
-            # One force value per each DOF
-            robot_dof_force = np.array(
-                gymtorch.wrap_tensor(self.gym.acquire_dof_force_tensor(self.sim))
-            )
-            beauty_print("DOF forces:\n {}".format(robot_dof_force), 2)
-            return robot_dof_force
-        elif mode == "dof_state":
-            # Each DOF state contains position and velocity and force sensor value
-            for i in range(len(self.envs)):
-                # TODO: multi envs
-                robot_dof_force = np.array(
-                    self.gym.get_actor_dof_forces(self.envs[i], self.robot_handles[i])
-                ).reshape((-1, 1))
-            robot_dof_pose_vel = np.array(
-                gymtorch.wrap_tensor(self.gym.acquire_dof_state_tensor(self.sim))
-            )
-            robot_dof_state = np.hstack((robot_dof_pose_vel, robot_dof_force))
-            beauty_print("DOF states:\n {}".format(robot_dof_state), 2)
-            return robot_dof_state
-        elif mode == "dof_pose_vel":
-            # Each DOF state contains position and velocity
-            robot_dof_pose_vel = np.array(
-                gymtorch.wrap_tensor(self.gym.acquire_dof_state_tensor(self.sim))
-            )
-            beauty_print("DOF poses and velocities:\n {}".format(robot_dof_pose_vel), 2)
-            return robot_dof_pose_vel
-        elif mode == "dof_pose":
-            # Each DOF pose contains position
-            robot_dof_pose_vel = np.array(
-                gymtorch.wrap_tensor(self.gym.acquire_dof_state_tensor(self.sim))
-            )
-            beauty_print("DOF poses:\n {}".format(robot_dof_pose_vel[:, 0]), 2)
-            return robot_dof_pose_vel[:, 0]
-        elif mode == "dof_vel":
-            # Each DOF velocity contains velocity
-            robot_dof_pose_vel = np.array(
-                gymtorch.wrap_tensor(self.gym.acquire_dof_state_tensor(self.sim))
-            )
-            beauty_print("DOF velocities:\n {}".format(robot_dof_pose_vel[:, 1]), 2)
-            return robot_dof_pose_vel[:, 1]
-        elif mode == "dof_force_np":
-            for i in range(len(self.envs)):
-                # TODO: multi envs
-                robot_dof_force = self.gym.get_actor_dof_forces(
-                    self.envs[i], self.robot_handles[i]
-                )
-                beauty_print("DOF force s:\n {}".format(robot_dof_force), 2)
-            return robot_dof_force
-        else:
-            raise ValueError("The mode {} is not supported".format(mode))
-
     def update_robot(
         self,
         traj,
@@ -783,167 +449,6 @@ class RobotSim(BaseSim):
                 gymutil.draw_lines(
                     sphere_geom, self.gym, self.viewer, self.envs[i], pose
                 )
-
-    def update_object(self, object_handles, object_poses, state_type):
-        """
-        Update the object pose
-
-        :param object_handles:
-        :param object_poses:
-        :param state_type: gymapi.STATE_ALL, gymapi.STATE_POS, gymapi.STATE_VEL
-        :return:
-        """
-        from isaacgym import gymapi
-
-        for i in range(len(self.envs)):
-            state = self.gym.get_actor_rigid_body_states(
-                self.envs[i], object_handles[i], gymapi.STATE_NONE
-            )
-            state["pose"]["p"].fill(
-                (object_poses[i][0], object_poses[i][1], object_poses[i][2])
-            )
-            state["pose"]["r"].fill(
-                (
-                    object_poses[i][3],
-                    object_poses[i][4],
-                    object_poses[i][5],
-                    object_poses[i][6],
-                )
-            )
-            state["vel"]["linear"].fill((0, 0, 0))
-            state["vel"]["angular"].fill((0, 0, 0))
-            self.gym.set_actor_rigid_body_states(
-                self.envs[i], object_handles[i], state, state_type
-            )
-
-    def run_traj_multi_rigid_bodies(
-        self,
-        traj: List,
-        attr_rbs: List = None,
-        attr_types=None,
-        object_start_pose: List = None,
-        object_end_pose: List = None,
-        object_related_joints: List = None,
-        root_state=None,
-        update_freq=0.001,
-        verbose=True,
-        index_list=None,
-        recursive_play=False,
-    ):
-        """
-        Set multiple attractors to let the urdf run the trajectory with multiple rigid bodies.
-
-        :param traj: a list of trajectories, each trajectory is a numpy array of shape (N, 7)
-        :param attr_rbs: [list], e.g. ["panda_left_hand", "panda_right_hand"]
-        :param attr_types: [list], e.g. [gymapi.AXIS_ALL, gymapi.AXIS_ROTATION, gymapi.AXIS_TRANSLATION]
-        :param object_start_pose: the initial pose of the object
-        :param object_end_pose: the final pose of the object
-        :param object_related_joints: the related joints of the object
-        :param root_state: the root state of the urdf
-        :param update_freq: the frequency of updating the urdf pose
-        :param verbose: if True, visualize the attractor spheres
-        :param index_list:
-        :param recursive_play:
-        :return:
-        """
-        from isaacgym import gymtorch
-
-        assert (
-            isinstance(traj, list) and len(traj) > 0
-        ), "The trajectory should be a list of numpy arrays"
-        beauty_print("Execute multi rigid bodies trajectory")
-
-        self.gym.prepare_sim(self.sim)
-        self.monitor_rigid_body_states()
-        self.monitor_actor_root_states()
-        self.monitor_dof_states()
-
-        if root_state is not None:
-            root_state = root_state.repeat(self.num_envs, 1, 1).reshape(
-                (-1, self.num_envs, 13)
-            )
-
-        self.robot_root_states = self.root_states.view(self.num_envs, 1, -1)[..., 0, :]
-
-        # Create the attractor
-        attr_rbs, attr_handles, axes_geoms, sphere_geoms = self._setup_attractors(
-            traj, attr_rbs, attr_types, verbose=verbose
-        )
-
-        # Time to wait in seconds before moving urdf
-        next_update_time = 1
-        index = 0
-        dof_states = torch.zeros(
-            (traj[0].shape[0], self.dof_states.shape[0], self.dof_states.shape[1]),
-            dtype=torch.float32,
-        )
-        save_dof_states = True
-        while not self.gym.query_viewer_has_closed(self.viewer):
-            # Every 0.01 seconds the pose of the attractor is updated
-            t = self.gym.get_sim_time(self.sim)
-
-            if t >= next_update_time:
-                self.gym.refresh_rigid_body_state_tensor(self.sim)
-                self.gym.refresh_actor_root_state_tensor(self.sim)
-                self.gym.refresh_dof_state_tensor(self.sim)
-
-                if save_dof_states:
-                    dof_states[index] = self.dof_states.clone()
-
-                self.gym.clear_lines(self.viewer)
-                for i in range(len(attr_rbs)):
-                    self.update_robot(
-                        traj[i],
-                        attr_handles[i],
-                        axes_geoms[i],
-                        sphere_geoms[i],
-                        index,
-                        verbose,
-                        index_list=index_list,
-                    )
-
-                if root_state is not None:
-                    if index_list is not None:
-                        root_state_tmp = torch.vstack(
-                            [root_state[idx, 0] for idx in index_list]
-                        )
-
-                        self.gym.set_actor_root_state_tensor(
-                            self.sim,
-                            gymtorch.unwrap_tensor(
-                                root_state_tmp.reshape(self.root_states.shape)
-                            ),
-                        )
-                    else:
-                        self.gym.set_actor_root_state_tensor(
-                            self.sim,
-                            gymtorch.unwrap_tensor(
-                                root_state[index].reshape(self.root_states.shape)
-                            ),
-                        )
-
-                next_update_time += update_freq
-                index += 1
-                if index >= len(traj[i]):
-                    if recursive_play:
-                        index = 0
-                    else:
-                        break  # stop the simulation
-
-            # Step the physics
-            self.gym.simulate(self.sim)
-            self.gym.fetch_results(self.sim, True)
-
-            # Step rendering
-            self.gym.step_graphics(self.sim)
-            self.gym.draw_viewer(self.viewer, self.sim, False)
-            self.gym.sync_frame_time(self.sim)
-
-        print("Done")
-        self.gym.destroy_viewer(self.viewer)
-        self.gym.destroy_sim(self.sim)
-
-        return dof_states
 
 
 if __name__ == "__main__":

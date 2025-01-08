@@ -24,17 +24,19 @@ envs:
   assets:
     robot_name: "CURI"
     assetRoot:
-#    assetFile: "urdf/curi/urdf/curi_isaacgym_dual_arm.urdf"
-    assetFile: "urdf/curi/urdf/curi_isaacgym_dual_arm_w_softhand.urdf"
+    assetFile: "urdf/curi/urdf/curi_isaacgym_dual_arm.urdf"
+#    assetFile: "urdf/curi/urdf/curi_isaacgym_dual_arm_w_softhand.urdf"
 #    assetFile: "urdf/curi/urdf/curi_w_softhand_isaacgym.urdf"
 #    assetFile: "urdf/curi/urdf/curi_isaacgym.urdf"
 #    assetFile: "mjcf/curi/curi_w_softhand_isaacgym.xml"
-    init_pose: [0.8, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0]
+    init_pose: [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0]
     fix_base_link: True
     disable_gravity: False
     flip_visual_attachments: True
     armature: 0.01
     slices_per_cylinder: 1000
+    stiffness: 300
+    damping: 30
 
   object_asset:
 #    object_names: ["power_drill"]
