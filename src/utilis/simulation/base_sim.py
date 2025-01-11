@@ -26,6 +26,7 @@ class BaseSim:
         self.gym = None
         self.sim_params = None
         self.physics_engine = None
+        self.hand_link_names = None
 
         self.config = load_omega_config(config)
         self.up_axis = None
@@ -168,7 +169,9 @@ class BaseSim:
         asset_files = self.config["env"]["object_asset"]["assetFiles"]
 
         asset_options = gymapi.AssetOptions()
-        asset_options.fix_base_link = self.config["env"]["object_asset"]["fix_base_link"]
+        asset_options.fix_base_link = self.config["env"]["object_asset"][
+            "fix_base_link"
+        ]
         asset_options.use_mesh_materials = True
         asset_options.mesh_normal_mode = gymapi.COMPUTE_PER_VERTEX
         asset_options.override_com = True
@@ -241,6 +244,18 @@ class BaseSim:
             )
 
 
+class Attractor(object):
+    """
+    The attractor object for tracking the trajectory using the embedded Isaac Gym PID controller
+    """
+
+    def __init__(self, attracted_link_name, attractor_handle, axes_geom, sphere_geom):
+        self.attracted_link_name = attracted_link_name
+        self.attractor_handle = attractor_handle
+        self.axes_geom = axes_geom
+        self.sphere_geom = sphere_geom
+
+
 class RobotSim(BaseSim):
     def __init__(self, config):
         """
@@ -262,6 +277,103 @@ class RobotSim(BaseSim):
         if hasattr(self.config["envs"], "table"):
             if self.config["envs"]["table"] is not None:
                 self.add_table()
+
+    def setup_attractor(self, attracted_link, attr_type, verbose=True):
+        """
+        Setup the attractors for tracking the trajectory using the embedded Isaac Gym PID controller
+        :param attracted_link: link names to be attracted, same dim as traj
+        :param attr_type: the type of the attractors
+        :param verbose: if True, visualize the attractor spheres
+        :return:
+        """
+
+        attractor_handle, axes_geom, sphere_geom = self._init_attractor(
+            attracted_link, attr_type=attr_type, verbose=verbose
+        )
+        return Attractor(attracted_link, attractor_handle, axes_geom, sphere_geom)
+
+    def _init_attractor(self, attracted_rigid_body, attr_type=None, verbose=True):
+        """
+        Initialize the attractor for tracking the trajectory using the embedded Isaac Gym PID controller
+
+        :param attracted_rigid_body: the joint to be attracted
+        :param attr_type: the type of the attractor
+        :param verbose: if True, visualize the attractor spheres
+        :return:
+        """
+        from isaacgym import gymapi
+        from isaacgym import gymutil
+
+        # Attractor setup
+        attractor_handles = []
+        attractor_properties = gymapi.AttractorProperties()
+        # Make attractor in all axes
+        attractor_properties.axes = attr_type
+        attractor_properties.stiffness = (
+            5e5
+            if attr_type == gymapi.AXIS_ALL or attr_type == gymapi.AXIS_TRANSLATION
+            else 5000
+        )
+        attractor_properties.damping = (
+            5e3
+            if attr_type == gymapi.AXIS_ALL or attr_type == gymapi.AXIS_TRANSLATION
+            else 500
+        )
+
+        # Create helper geometry used for visualization
+        # Create a wireframe axis
+        axes_geom = gymutil.AxesGeometry(0.1)
+        # Create a wireframe sphere
+        sphere_rot = gymapi.Quat.from_euler_zyx(0.5 * math.pi, 0, 0)
+        sphere_pose = gymapi.Transform(r=sphere_rot)
+        if attr_type == gymapi.AXIS_ALL:
+            sphere_geom = gymutil.WireframeSphereGeometry(
+                0.003, 12, 12, sphere_pose, color=(1, 0, 0)
+            )
+        elif attr_type == gymapi.AXIS_ROTATION:
+            sphere_geom = gymutil.WireframeSphereGeometry(
+                0.003, 12, 12, sphere_pose, color=(0, 1, 0)
+            )
+        elif attr_type == gymapi.AXIS_TRANSLATION:
+            sphere_geom = gymutil.WireframeSphereGeometry(
+                0.003, 12, 12, sphere_pose, color=(0, 0, 1)
+            )
+        else:
+            sphere_geom = gymutil.WireframeSphereGeometry(
+                0.003, 12, 12, sphere_pose, color=(1, 1, 1)
+            )
+
+        for i in range(len(self.envs)):
+            env = self.envs[i]
+            handle = self.robot_handles[i]
+
+            body_dict = self.gym.get_actor_rigid_body_dict(env, handle)
+            # beauty_print(f"get_actor_rigid_body_dict: {body_dict}")
+            props = self.gym.get_actor_rigid_body_states(env, handle, gymapi.STATE_POS)
+            attracted_rigid_body_handle = self.gym.find_actor_rigid_body_handle(
+                env, handle, attracted_rigid_body
+            )
+
+            # Initialize the attractor
+            attractor_properties.target = props["pose"][:][
+                body_dict[attracted_rigid_body]
+            ]
+            attractor_properties.rigid_handle = attracted_rigid_body_handle
+
+            if verbose:
+                # Draw axes and sphere at attractor location
+                gymutil.draw_lines(
+                    axes_geom, self.gym, self.viewer, env, attractor_properties.target
+                )
+                gymutil.draw_lines(
+                    sphere_geom, self.gym, self.viewer, env, attractor_properties.target
+                )
+
+            attractor_handle = self.gym.create_rigid_body_attractor(
+                env, attractor_properties
+            )
+            attractor_handles.append(attractor_handle)
+        return attractor_handles, axes_geom, sphere_geom
 
     def setup_robot_dof_prop(self):
         robot_dof_props = self.gym.get_asset_dof_properties(self.robot_asset)
@@ -294,14 +406,8 @@ class RobotSim(BaseSim):
         dof_count = self.gym.get_actor_dof_count(self.envs[0], self.robot_handles[0])
         # maps degree of freedom names to actor-relative indices
         dof_dict = self.gym.get_actor_dof_dict(self.envs[0], self.robot_handles[0])
-        # Gets forces for the actor’s degrees of freedom
-        # dof_forces = self.gym.get_actor_dof_forces(self.envs[0], self.robot_handles[0])
-        # Gets Frames for Degrees of Freedom of actor
-        # dof_frames = self.gym.get_actor_dof_frames(self.envs[0], self.robot_handles[0])
-        # Gets names of all degrees of freedom on actor
+        # Gets names of the actor’s degrees of freedom
         dof_names = self.gym.get_actor_dof_names(self.envs[0], self.robot_handles[0])
-        # Gets target position for the actor’s degrees of freedom.
-        # dof_position_targets = self.gym.get_actor_dof_position_targets(self.envs[0], self.robot_handles[0])
         # Gets properties for all Dofs on an actor.
         dof_properties = self.gym.get_actor_dof_properties(
             self.envs[0], self.robot_handles[0]
@@ -337,11 +443,18 @@ class RobotSim(BaseSim):
 
         self._dof_states = self.gym.acquire_dof_state_tensor(self.sim)
         self.dof_states = gymtorch.wrap_tensor(self._dof_states)
+        print("1")
+
+    def get_attractor_pose(self, env, attractor_handle):
+        attractor_properties = self.gym.get_attractor_properties(env, attractor_handle)
+        pose = attractor_properties.target
+        return pose
 
     def create_env(self):
         # Load urdf asset
         self.robot_asset_root = self.asset_root
-        self.robot_asset_file = self.config["envs"]["assets"]["assetFile"]
+        self.robot_asset_file = self.config["envs"]["assets"]["asset"]["assetFile"]
+        self.hand_link_names = self.config["envs"]["assets"]["asset"]["hand_link_names"]
         asset_options = gymapi.AssetOptions()
         asset_options.fix_base_link = self.config["envs"]["assets"]["fix_base_link"]
         asset_options.disable_gravity = self.config["envs"]["assets"]["disable_gravity"]
@@ -416,9 +529,7 @@ class RobotSim(BaseSim):
     def update_robot(
         self,
         traj,
-        attractor_handles,
-        axes_geom,
-        sphere_geom,
+        attractor_object: Attractor,
         index,
         verbose=True,
         index_list=None,
@@ -428,7 +539,7 @@ class RobotSim(BaseSim):
         for i in range(self.num_envs):
             # Update attractor target from current franka state
             attractor_properties = self.gym.get_attractor_properties(
-                self.envs[i], attractor_handles[i]
+                self.envs[i], attractor_object.attractor_handle[i]
             )
             pose = attractor_properties.target
             # pose.p: (x, y, z), pose.r: (w, x, y, z)
@@ -441,16 +552,88 @@ class RobotSim(BaseSim):
             pose.r.x = traj[index, 3]
             pose.r.y = traj[index, 4]
             pose.r.z = traj[index, 5]
-            self.gym.set_attractor_target(self.envs[i], attractor_handles[i], pose)
+            self.gym.set_attractor_target(
+                self.envs[i], attractor_object.attractor_handle[i], pose
+            )
 
             if verbose:
                 # Draw axes and sphere at attractor location
-                gymutil.draw_lines(axes_geom, self.gym, self.viewer, self.envs[i], pose)
                 gymutil.draw_lines(
-                    sphere_geom, self.gym, self.viewer, self.envs[i], pose
+                    attractor_object.axes_geom,
+                    self.gym,
+                    self.viewer,
+                    self.envs[i],
+                    pose,
                 )
+                gymutil.draw_lines(
+                    attractor_object.sphere_geom,
+                    self.gym,
+                    self.viewer,
+                    self.envs[i],
+                    pose,
+                )
+
+    def set_viewer(self):
+        """Create the viewer."""
+        self.enable_viewer_sync = True
+        self.viewer = None
+        # if running with a vienv.viewerewer, set up keyboard shortcuts and camera
+        if self.headless == False:
+            # subscribe to keyboard shortcuts
+            self.viewer = self.gym.create_viewer(self.sim, gymapi.CameraProperties())
+            self.gym.subscribe_viewer_keyboard_event(self.viewer, gymapi.KEY_R, "reset")
+            self.gym.subscribe_viewer_keyboard_event(
+                self.viewer, gymapi.KEY_P, "change_print_state"
+            )
+            self.gym.subscribe_viewer_keyboard_event(self.viewer, gymapi.KEY_S, "save")
+            self.gym.subscribe_viewer_keyboard_event(
+                self.viewer, gymapi.KEY_T, "print_once"
+            )
+            self.gym.subscribe_viewer_keyboard_event(
+                self.viewer, gymapi.KEY_C, "switch_cam_view"
+            )
+            self.gym.subscribe_viewer_keyboard_event(
+                self.viewer, gymapi.KEY_0, "if_target_track"
+            )
+            self.gym.subscribe_viewer_keyboard_event(
+                self.viewer, gymapi.KEY_N, "force_next_stage"
+            )
+            self.gym.subscribe_viewer_keyboard_event(
+                self.viewer, gymapi.KEY_D, "change_debug"
+            )
+            self.gym.subscribe_viewer_keyboard_event(
+                self.viewer, gymapi.KEY_V, "check_task_stage"
+            )
+            self.gym.subscribe_viewer_keyboard_event(
+                self.viewer, gymapi.KEY_9, "pause_tracking"
+            )
+            self.gym.subscribe_viewer_keyboard_event(
+                self.viewer, gymapi.KEY_L, "load_franka_dof"
+            )
+            # ik ee drive
+            self.gym.subscribe_viewer_keyboard_event(
+                self.viewer, gymapi.KEY_LEFT_SHIFT, "switch_franka"
+            )
+            self.gym.subscribe_viewer_keyboard_event(
+                self.viewer, gymapi.KEY_UP, "drive_xminus"
+            )
+            self.gym.subscribe_viewer_keyboard_event(
+                self.viewer, gymapi.KEY_DOWN, "drive_xplus"
+            )
+            self.gym.subscribe_viewer_keyboard_event(
+                self.viewer, gymapi.KEY_LEFT, "drive_zplus"
+            )
+            self.gym.subscribe_viewer_keyboard_event(
+                self.viewer, gymapi.KEY_RIGHT, "drive_zminus"
+            )
+            self.gym.subscribe_viewer_keyboard_event(
+                self.viewer, gymapi.KEY_LEFT_BRACKET, "drive_yplus"
+            )
+            self.gym.subscribe_viewer_keyboard_event(
+                self.viewer, gymapi.KEY_RIGHT_BRACKET, "drive_yminus"
+            )
 
 
 if __name__ == "__main__":
     print("1")
-    robot_sim = RobotSim("CURI")
+    robot_sim = RobotSim("curi")

@@ -17,6 +17,29 @@ import math
 class CURISim(RobotSim):
     def __init__(self, config="curi"):
         super().__init__(config)
+        # robot_dof_info = self.get_dof_info()
+
+        ## Set up the attractors for two hands
+        self.left_hand_attractor = self.setup_attractor(
+            self.hand_link_names[0], gymapi.AXIS_ALL
+        )
+        self.right_hand_attractor = self.setup_attractor(
+            self.hand_link_names[1], gymapi.AXIS_ALL
+        )
+
+    @property
+    def left_hand_pose(self):
+        pose = self.get_attractor_pose(
+            self.envs[0], self.left_hand_attractor.attractor_handle[0]
+        )
+        return [pose.p.x, pose.p.y, pose.p.z, pose.r.x, pose.r.y, pose.r.z, pose.r.w]
+
+    @property
+    def right_hand_pose(self):
+        pose = self.get_attractor_pose(
+            self.envs[0], self.right_hand_attractor.attractor_handle[0]
+        )
+        return [pose.p.x, pose.p.y, pose.p.z, pose.r.x, pose.r.y, pose.r.z, pose.r.w]
 
     def interact_with_curi(self):
         while not self.gym.query_viewer_has_closed(self.viewer):
@@ -34,28 +57,29 @@ class CURISim(RobotSim):
             self.gym.step_graphics(self.sim)
             self.gym.draw_viewer(self.viewer, self.sim, False)
             self.gym.sync_frame_time(self.sim)
+            # pose = self.get_attractor_pose(self.envs[0], "panda_left_link7")
+            # print(pose)
+            # print(self.left_hand_pose)
+            self.save_traj(self.left_hand_pose, "left_hand_traj.npy")
+            self.save_traj(self.right_hand_pose, "right_hand_traj.npy")
+            print("1")
 
     def run_traj_multi_rigid_bodies(
         self,
         traj: List,
-        attr_rbs: List = None,
-        attr_types=None,
+        attractor_objects: List,
         update_freq=0.001,
         verbose=True,
         index_list=None,
-        recursive_play=False,
     ):
         """
         Set multiple attractors to let the robot run the trajectory with multiple rigid bodies.
 
-        :param traj: a list of trajectories, each trajectory is a numpy array of shape (N, 7)
-        :param attr_rbs: [list], e.g. ["panda_left_hand", "panda_right_hand"]
-        :param attr_types: [list], e.g. [gymapi.AXIS_ALL, gymapi.AXIS_ROTATION, gymapi.AXIS_TRANSLATION]
-        :param root_state: the root state of the robot
+        :param traj: a list of trajectories, each trajectory is a numpy array of shape (N, 7), (x,y,z, qx, qy, qz, qw)
+        :param attractor_objects: [Attractor], the list of attractor objects
         :param update_freq: the frequency of updating the robot pose
         :param verbose: if True, visualize the attractor spheres
         :param index_list:
-        :param recursive_play:
         :return:
         """
         from isaacgym import gymtorch
@@ -69,14 +93,6 @@ class CURISim(RobotSim):
         self.monitor_rigid_body_states()
         self.monitor_actor_root_states()
         self.monitor_dof_states()
-
-        self.robot_root_states = self.root_states.view(self.num_envs, 1, -1)[..., 0, :]
-
-        # Create the attractor
-        attr_rbs, attr_handles, axes_geoms, sphere_geoms = self._setup_attractors(
-            traj, attr_rbs, attr_types, verbose=verbose
-        )
-
         # Time to wait in seconds before moving robot
         next_update_time = 1
         index = 0
@@ -87,6 +103,7 @@ class CURISim(RobotSim):
         save_dof_states = True
         while not self.gym.query_viewer_has_closed(self.viewer):
             # Every 0.01 seconds the pose of the attractor is updated
+            # print(self.left_hand_pose)
             t = self.gym.get_sim_time(self.sim)
 
             if t >= next_update_time:
@@ -98,12 +115,10 @@ class CURISim(RobotSim):
                     dof_states[index] = self.dof_states.clone()
 
                 self.gym.clear_lines(self.viewer)
-                for i in range(len(attr_rbs)):
+                for i in range(len(attractor_objects)):
                     self.update_robot(
                         traj[i],
-                        attr_handles[i],
-                        axes_geoms[i],
-                        sphere_geoms[i],
+                        attractor_objects[i],
                         index,
                         verbose,
                         index_list=index_list,
@@ -111,11 +126,6 @@ class CURISim(RobotSim):
 
                 next_update_time += update_freq
                 index += 1
-                if index >= len(traj[i]):
-                    if recursive_play:
-                        index = 0
-                    else:
-                        break  # stop the simulation
 
             # Step the physics
             self.gym.simulate(self.sim)
@@ -215,43 +225,25 @@ class CURISim(RobotSim):
             attractor_handles.append(attractor_handle)
         return attractor_handles, axes_geom, sphere_geom
 
-    def _setup_attractors(self, traj, attracted_links, attr_types, verbose=True):
-        """
-        Setup the attractors for tracking the trajectory using the embedded Isaac Gym PID controller
-
-        :param traj: the trajectory to be tracked
-        :param attracted_links: link names to be attracted, same dim as traj
-        :param attr_types: the type of the attractors
-        :param verbose: if True, visualize the attractor spheres
-        :return:
-        """
-        assert isinstance(attracted_links, list), "The attracted joints should be a list"
-        assert len(attracted_links) == len(
-            traj
-        ), "The first dimension of trajectory should equal to attr_rbs"
-        assert len(attracted_links) == len(
-            attr_types
-        ), "The first dimension of attr_types should equal to attr_rbs"
-
-        attractor_handles, axes_geoms, sphere_geoms = [], [], []
-        for i in range(len(attracted_links)):
-            attractor_handle, axes_geom, sphere_geom = self._init_attractor(
-                attracted_links[i], attr_type=attr_types[i], verbose=verbose
-            )
-            attractor_handles.append(attractor_handle)
-            axes_geoms.append(axes_geom)
-            sphere_geoms.append(sphere_geom)
-        return attracted_links, attractor_handles, axes_geoms, sphere_geoms
+    def save_traj(self, pose1, filename):
+        left_hand_pose = pose1
+        new_pose = left_hand_pose
+        current_pose = np.array([left_hand_pose])
+        for i in range(100):
+            new_pose[0] -= 0.002
+            current_pose = np.vstack((current_pose, new_pose))
+            if i % 100 == 0:
+                print(f"i: {i}")
+        np.save(filename, current_pose)
 
 
 if __name__ == "__main__":
     curi_sim = CURISim()
-    curi_sim.interact_with_curi()
-    traj_l = np.load("../../../assets/data/LQT_LQR/taichi_2l.npy")
-    traj_r = np.load("../../../assets/data/LQT_LQR/taichi_2r.npy")
-    # curi_sim.run_traj_multi_rigid_bodies(
-    #     traj=[traj_l, traj_r],
-    #     attr_rbs=["panda_left_link7", "panda_right_link7"],
-    #     attr_types=[gymapi.AXIS_ALL, gymapi.AXIS_ALL],
-    #     update_freq=0.001,
-    # )
+    # curi_sim.interact_with_curi()
+    traj_l = np.load("left_hand_traj.npy")
+    traj_r = np.load("right_hand_traj.npy")
+    curi_sim.run_traj_multi_rigid_bodies(
+        traj=[traj_r, traj_l],
+        attractor_objects=[curi_sim.right_hand_attractor, curi_sim.left_hand_attractor],
+        update_freq=0.1,
+    )

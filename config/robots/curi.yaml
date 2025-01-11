@@ -23,9 +23,15 @@ envs:
 
   assets:
     robot_name: "CURI"
-    assetRoot:
-    assetFile: "urdf/curi/urdf/curi_isaacgym_dual_arm.urdf"
-#    assetFile: "urdf/curi/urdf/curi_isaacgym_dual_arm_w_softhand.urdf"
+    asset:
+#      assetFile: "urdf/curi/urdf/curi_isaacgym_dual_arm.urdf"
+#      # [left, right]
+#      hand_link_names: ["panda_left_hand", "panda_left_hand"]
+
+
+      assetFile: "urdf/curi/urdf/curi_isaacgym_dual_arm_w_softhand.urdf"
+      hand_link_names: ["left_qbhand_palm_link", "right_qbhand_palm_link"]
+
 #    assetFile: "urdf/curi/urdf/curi_w_softhand_isaacgym.urdf"
 #    assetFile: "urdf/curi/urdf/curi_isaacgym.urdf"
 #    assetFile: "mjcf/curi/curi_w_softhand_isaacgym.xml"
