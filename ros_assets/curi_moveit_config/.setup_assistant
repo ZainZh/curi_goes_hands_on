@@ -1,0 +1,11 @@
+moveit_setup_assistant_config:
+  URDF:
+    package: curi_goes_hands_on
+    relative_path: ros_assets/urdf/curi/urdf/curi.urdf
+    xacro_args: ""
+  SRDF:
+    relative_path: config/curi.srdf
+  CONFIG:
+    author_name: Zheng SUN
+    author_email: zhengsun@link.cuhk.edu.hk
+    generated_timestamp: 1736843291

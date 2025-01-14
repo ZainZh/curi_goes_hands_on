@@ -239,11 +239,11 @@ class CURISim(RobotSim):
 
 if __name__ == "__main__":
     curi_sim = CURISim()
-    # curi_sim.interact_with_curi()
-    traj_l = np.load("left_hand_traj.npy")
-    traj_r = np.load("right_hand_traj.npy")
-    curi_sim.run_traj_multi_rigid_bodies(
-        traj=[traj_r, traj_l],
-        attractor_objects=[curi_sim.right_hand_attractor, curi_sim.left_hand_attractor],
-        update_freq=0.1,
-    )
+    curi_sim.interact_with_curi()
+    # traj_l = np.load("left_hand_traj.npy")
+    # traj_r = np.load("right_hand_traj.npy")
+    # curi_sim.run_traj_multi_rigid_bodies(
+    #     traj=[traj_r, traj_l],
+    #     attractor_objects=[curi_sim.right_hand_attractor, curi_sim.left_hand_attractor],
+    #     update_freq=0.1,
+    # )
