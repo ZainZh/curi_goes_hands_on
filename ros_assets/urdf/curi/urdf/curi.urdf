@@ -14,11 +14,7 @@
     <!-- || by: Claudio Gaz, Marco Cognetti, Alexander Oliva,         || -->
     <!-- || Paolo Robuffo Giordano, Alessandro de Luca                || -->
     <!-- =============================================================== -->
-    <link name="world" />
-    <joint name="reference" type="floating">
-        <parent link="world" />
-        <child link="summit_xls_base_footprint" />
-    </joint>
+
     <link name="summit_xls_base_footprint">
         <visual>
             <origin rpy="0 0 0" xyz="0 0 0" />

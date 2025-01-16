@@ -64,6 +64,7 @@ except:  # For Python 2 compatibility
 
 
 from std_msgs.msg import String
+
 from moveit_commander.conversions import pose_to_list
 
 ## END_SUB_TUTORIAL
@@ -126,7 +127,7 @@ class MoveGroupPythonInterfaceTutorial(object):
         ## If you are using a different robot, change this value to the name of your robot
         ## arm planning group.
         ## This interface can be used to plan and execute motions:
-        group_name = "panda_arm"
+        group_name = "left_arm"
         move_group = moveit_commander.MoveGroupCommander(group_name)
 
         ## Create a `DisplayTrajectory`_ ROS publisher which is used to display
@@ -389,7 +390,7 @@ class MoveGroupPythonInterfaceTutorial(object):
         ## ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
         ## First, we will create a box in the planning scene between the fingers:
         box_pose = geometry_msgs.msg.PoseStamped()
-        box_pose.header.frame_id = "panda_hand"
+        box_pose.header.frame_id = "panda_left_hand"
         box_pose.pose.orientation.w = 1.0
         box_pose.pose.position.z = 0.11  # above the panda_hand frame
         box_name = "box"
@@ -421,7 +422,7 @@ class MoveGroupPythonInterfaceTutorial(object):
         ## planning scene to ignore collisions between those links and the box. For the Panda
         ## robot, we set ``grasping_group = 'panda_hand'``. If you are using a different robot,
         ## you should change this value to the name of your end effector group name.
-        grasping_group = "panda_hand"
+        grasping_group = "left_hand"
         touch_links = robot.get_link_names(group=grasping_group)
         scene.attach_box(eef_link, box_name, touch_links=touch_links)
         ## END_SUB_TUTORIAL

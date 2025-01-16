@@ -2,10 +2,8 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/../IsaacGymEnvs_ICIRA/.idea/IsaacGymEnvs_ICIRA.iml" filepath="$PROJECT_DIR$/../IsaacGymEnvs_ICIRA/.idea/IsaacGymEnvs_ICIRA.iml" />
-      <module fileurl="file://$PROJECT_DIR$/../Rofunc/.idea/Rofunc.iml" filepath="$PROJECT_DIR$/../Rofunc/.idea/Rofunc.iml" />
+      <module fileurl="file://$PROJECT_DIR$/../Robot_Asset/.idea/Robot_Asset.iml" filepath="$PROJECT_DIR$/../Robot_Asset/.idea/Robot_Asset.iml" />
       <module fileurl="file://$PROJECT_DIR$/.idea/curi_goes_hands_on.iml" filepath="$PROJECT_DIR$/.idea/curi_goes_hands_on.iml" />
-      <module fileurl="file://$PROJECT_DIR$/../Downloads/rrt-algorithms/.idea/rrt-algorithms.iml" filepath="$PROJECT_DIR$/../Downloads/rrt-algorithms/.idea/rrt-algorithms.iml" />
     </modules>
   </component>
 </project>
