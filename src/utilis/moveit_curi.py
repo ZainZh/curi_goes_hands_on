@@ -18,7 +18,8 @@ import geometry_msgs.msg
 from math import pi, tau, dist, fabs, cos
 from std_msgs.msg import String
 from moveit_commander.conversions import pose_to_list
-from common import load_omega_config
+from common import load_omega_config, print_info, print_debug, print_warning
+from typing import List
 
 
 class MoveItCURI(object):
@@ -30,35 +31,185 @@ class MoveItCURI(object):
         self.robot = moveit_commander.RobotCommander()
         self.scene = moveit_commander.PlanningSceneInterface()
 
-        self.left_group_name = "left_arm"
+        self.left_group_name = self.config["left_arm_group"]
         self.left_group = moveit_commander.MoveGroupCommander(self.left_group_name)
         self.left_eef_link = self.left_group.get_end_effector_link()
         self.group_names = self.robot.get_group_names()
 
-        self.right_group_name = "right_arm"
+        self.right_group_name = self.config["right_arm_group"]
         self.right_group = moveit_commander.MoveGroupCommander(self.right_group_name)
         self.right_eef_link = self.right_group.get_end_effector_link()
 
+        self.dual_group_name = self.config["dual_arm_group"]
+        self.dual_group = moveit_commander.MoveGroupCommander(self.dual_group_name)
+        self.dual_eef_link = self.dual_group.get_end_effector_link()
+        self.default_dual_arm_joint_state = self.config["default_dual_arm_joint_state"]
+        self.init_state()
+
+    def init_state(self):
+        self.dual_arm_go_to_joint_state(self.default_dual_arm_joint_state)
+
+    def go_to_joint_state(self, joint_state, group_name="left_arm"):
+        """
+        Go to the joint state
+        Args:
+            joint_state: list[float] (7,)
+            group_name: str
+        """
+        if group_name == "left_arm":
+            group = self.left_group
+        else:
+            group = self.right_group
+        group.go(joint_state, wait=True)
+        group.stop()
+
     @property
-    def left_arm_joint_state(self):
+    def left_arm_joint_state(self) -> List[float]:
+        """
+        Get the current joint values of the left arm
+        Returns:
+            list[float] (7,)
+        """
+
         return self.left_group.get_current_joint_values()
 
     @property
-    def right_arm_joint_state(self):
+    def right_arm_joint_state(self) -> List[float]:
+        """
+        Get the current joint values of the right arm
+        Returns:
+            list[float] (7,)
+        """
         return self.right_group.get_current_joint_values()
 
     @property
-    def left_arm_pose(self):
+    def left_arm_pose(self) -> List[float]:
+        """
+        Get the current pose of the left arm
+        Returns
+            List[float] (x, y, z, qx, qy, qz, qw)
+        -------
+
+        """
         return pose_to_list(self.left_group.get_current_pose().pose)
 
     @property
-    def right_arm_pose(self):
+    def right_arm_pose(self) -> List[float]:
+        """
+        Get the current pose of the right arm
+        Returns
+            List[float] (x, y, z, qx, qy, qz, qw)
+        -------
+
+        """
         return pose_to_list(self.right_group.get_current_pose().pose)
+
+    @property
+    def dual_arm_joint_state(self) -> List[float]:
+        """
+        
+        Returns
+        -------
+
+        """ """
+
+        """
+        return self.dual_group.get_current_joint_values()
+
+    def is_all_close(self, goal, actual, tolerance):
+        """
+        Convenience method for testing if the values in two lists are within a tolerance of each other.
+        For Pose and PoseStamped inputs, the angle between the two quaternions is compared (the angle
+        between the identical orientations q and -q is calculated correctly).
+        @param: goal       A list of floats, a Pose or a PoseStamped
+        @param: actual     A list of floats, a Pose or a PoseStamped
+        @param: tolerance  A float
+        @returns: bool
+        """
+        if type(goal) is list:
+            for index in range(len(goal)):
+                if abs(actual[index] - goal[index]) > tolerance:
+                    return False
+
+        elif type(goal) is geometry_msgs.msg.PoseStamped:
+            return self.is_all_close(goal.pose, actual.pose, tolerance)
+
+        elif type(goal) is geometry_msgs.msg.Pose:
+            x0, y0, z0, qx0, qy0, qz0, qw0 = pose_to_list(actual)
+            x1, y1, z1, qx1, qy1, qz1, qw1 = pose_to_list(goal)
+            # Euclidean distance
+            d = dist((x1, y1, z1), (x0, y0, z0))
+            # phi = angle between orientations
+            cos_phi_half = fabs(qx0 * qx1 + qy0 * qy1 + qz0 * qz1 + qw0 * qw1)
+            return d <= tolerance and cos_phi_half >= cos(tolerance / 2.0)
+
+        return True
+
+    def left_arm_go_to_joint_state(self):
+        """
+        Go to the joint state of the left arm
+        """
+        joint_goal = self.left_group.get_current_joint_values()
+        joint_goal[0] = 0
+        joint_goal[1] = -tau / 8
+        joint_goal[2] = 0
+        joint_goal[3] = -tau / 4
+        joint_goal[4] = 0
+        joint_goal[5] = tau / 6  # 1/6 of a turn
+        joint_goal[6] = 0
+        self.left_group.go(joint_goal, wait=True)
+        self.left_group.stop()
+
+        current_joints = self.left_group.get_current_joint_values()
+        return self.is_all_close(joint_goal, current_joints, 0.01)
+
+    def right_arm_go_to_joint_state(self):
+        """
+        Go to the joint state of the right arm
+        """
+        joint_goal = self.right_group.get_current_joint_values()
+        joint_goal[0] = 0
+        joint_goal[1] = -tau / 8
+        joint_goal[2] = 0
+        joint_goal[3] = -tau / 4
+        joint_goal[4] = 0
+        joint_goal[5] = tau / 6  # 1/6 of a turn
+        joint_goal[6] = 0
+        self.right_group.go(joint_goal, wait=True)
+        self.right_group.stop()
+
+        current_joints = self.right_group.get_current_joint_values()
+        return self.is_all_close(joint_goal, current_joints, 0.01)
+
+    def dual_arm_go_to_joint_state(self, joint_state: List[float] = None):
+        """
+        Go to the joint state of the dual arm
+        input: joint_state: list[float] (14,)
+
+        Output: bool
+        """
+        if joint_state is None:
+            joint_state = self.default_dual_arm_joint_state
+            print_debug("No valid joint state, using default dual arm joint state.")
+
+        joint_goal = self.dual_group.get_current_joint_values()
+        joint_goal[1:] = joint_state
+
+        self.dual_group.go(joint_goal, wait=True)
+        self.dual_group.stop()
+        current_joints = self.dual_group.get_current_joint_values()
+        return self.is_all_close(joint_goal, current_joints, 0.01)
 
 
 if __name__ == "__main__":
     moveit_curi = MoveItCURI()
     print("left_arm_joint_state: ", moveit_curi.left_arm_joint_state)
     print("right_arm_joint_state: ", moveit_curi.right_arm_joint_state)
+    print("dual_arm_joint_state: ", moveit_curi.dual_arm_joint_state)
     print("left_arm_pose: ", moveit_curi.left_arm_pose)
     print("right_arm_pose: ", moveit_curi.right_arm_pose)
+
+    # print(moveit_curi.go_left_arm_to_joint_state())
+    # print(moveit_curi.right_arm_go_to_joint_state())
+    # print(moveit_curi.right_arm_go_to_joint_state())
+    # print(moveit_curi.dual_arm_go_to_joint_state())
