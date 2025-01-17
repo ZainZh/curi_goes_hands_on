@@ -13,13 +13,15 @@ import sys
 import copy
 import rospy
 import moveit_commander
-import moveit_msgs.msg
-import geometry_msgs.msg
+import moveit_msgs.msg as moveit_msgs
+import geometry_msgs.msg as geometry_msgs
 from math import pi, tau, dist, fabs, cos
 from std_msgs.msg import String
 from moveit_commander.conversions import pose_to_list
+from shape_msgs.msg import SolidPrimitive
 from common import load_omega_config, print_info, print_debug, print_warning
 from typing import List
+import moveit_ros_planning_interface
 
 
 class MoveItCURI(object):
@@ -30,6 +32,7 @@ class MoveItCURI(object):
         rospy.init_node("moveit_curi", anonymous=True)
         self.robot = moveit_commander.RobotCommander()
         self.scene = moveit_commander.PlanningSceneInterface()
+        self.scene_pub = rospy.Publisher("planning_scene", moveit_msgs.PlanningScene, queue_size=10)
 
         self.left_group_name = self.config["left_arm_group"]
         self.left_group = moveit_commander.MoveGroupCommander(self.left_group_name)
@@ -39,15 +42,44 @@ class MoveItCURI(object):
         self.right_group_name = self.config["right_arm_group"]
         self.right_group = moveit_commander.MoveGroupCommander(self.right_group_name)
         self.right_eef_link = self.right_group.get_end_effector_link()
+        # self.right_group.set_named_target("right_arm_home")
 
         self.dual_group_name = self.config["dual_arm_group"]
         self.dual_group = moveit_commander.MoveGroupCommander(self.dual_group_name)
-        self.dual_eef_link = self.dual_group.get_end_effector_link()
         self.default_dual_arm_joint_state = self.config["default_dual_arm_joint_state"]
-        self.init_state()
+        # self.init_state()
 
     def init_state(self):
+        # self.init_scene()
         self.dual_arm_go_to_joint_state(self.default_dual_arm_joint_state)
+
+    def init_scene(self):
+        """
+        Clear the scene and add the table
+        """
+        table_object = moveit_msgs.CollisionObject()
+        table_object.id = "table"
+        table_object.header.frame_id = "summit_xls_base_footprint"
+
+        # 定义盒子的几何形状
+        table_primitive = SolidPrimitive()
+        table_primitive.type = SolidPrimitive.BOX
+        table_primitive.dimensions = [4, 2, 1]
+
+        table_pose = geometry_msgs.Pose()
+        table_pose.position.x = 5
+        table_pose.position.y = 5
+        table_pose.position.z = 0.5
+
+        table_object.primitives.append(table_primitive)
+        table_object.primitive_poses.append(table_pose)
+        table_object.operation = table_object.ADD
+        planning_scene = moveit_msgs.PlanningScene()
+        planning_scene.is_diff = True
+        planning_scene.world.collision_objects.append(table_object)
+
+        planning_scene_interface = moveit_ros_planning_interface.PlanningSceneInterface()
+        planning_scene_interface.applyCollisionObject(table_object)
 
     def go_to_joint_state(self, joint_state, group_name="left_arm"):
         """
@@ -116,6 +148,18 @@ class MoveItCURI(object):
         """
         return self.dual_group.get_current_joint_values()
 
+    @property
+    def dual_arm_pose(self) -> List[float]:
+        """
+        
+        Returns
+        -------
+
+        """ """
+
+        """
+        return pose_to_list(self.dual_group.get_current_pose().pose)
+
     def is_all_close(self, goal, actual, tolerance):
         """
         Convenience method for testing if the values in two lists are within a tolerance of each other.
@@ -131,10 +175,10 @@ class MoveItCURI(object):
                 if abs(actual[index] - goal[index]) > tolerance:
                     return False
 
-        elif type(goal) is geometry_msgs.msg.PoseStamped:
+        elif type(goal) is geometry_msgs.PoseStamped:
             return self.is_all_close(goal.pose, actual.pose, tolerance)
 
-        elif type(goal) is geometry_msgs.msg.Pose:
+        elif type(goal) is geometry_msgs.Pose:
             x0, y0, z0, qx0, qy0, qz0, qw0 = pose_to_list(actual)
             x1, y1, z1, qx1, qy1, qz1, qw1 = pose_to_list(goal)
             # Euclidean distance
@@ -192,13 +236,28 @@ class MoveItCURI(object):
             joint_state = self.default_dual_arm_joint_state
             print_debug("No valid joint state, using default dual arm joint state.")
 
-        joint_goal = self.dual_group.get_current_joint_values()
-        joint_goal[1:] = joint_state
-
-        self.dual_group.go(joint_goal, wait=True)
+        self.dual_group.go(joint_state, wait=True)
         self.dual_group.stop()
         current_joints = self.dual_group.get_current_joint_values()
-        return self.is_all_close(joint_goal, current_joints, 0.01)
+        return self.is_all_close(joint_state, current_joints, 0.01)
+
+    def dual_arm_go_to_joint_state_test(self):
+        """
+        Go to the joint state of the dual arm
+        input: joint_state: list[float] (14,)
+
+        Output: bool
+        """
+        joint_goal_left = self.left_group.get_current_pose()
+        joint_goal_right = self.right_group.get_current_pose()
+
+        joint_goal_left.pose.position.z += 0.2
+        joint_goal_right.pose.position.z -= 0.2
+
+        self.dual_group.set_pose_target(joint_goal_left, self.left_eef_link)
+        self.dual_group.set_pose_target(joint_goal_right, self.right_eef_link)
+        self.dual_group.go(wait=True)
+        self.dual_group.stop()
 
 
 if __name__ == "__main__":
@@ -208,7 +267,9 @@ if __name__ == "__main__":
     print("dual_arm_joint_state: ", moveit_curi.dual_arm_joint_state)
     print("left_arm_pose: ", moveit_curi.left_arm_pose)
     print("right_arm_pose: ", moveit_curi.right_arm_pose)
+    # print("dual_arm_pose: ", moveit_curi.dual_arm_pose)
 
+    moveit_curi.dual_arm_go_to_joint_state_test()
     # print(moveit_curi.go_left_arm_to_joint_state())
     # print(moveit_curi.right_arm_go_to_joint_state())
     # print(moveit_curi.right_arm_go_to_joint_state())

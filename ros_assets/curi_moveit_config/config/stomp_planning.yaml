@@ -154,8 +154,8 @@ stomp/right_hand:
         publish_intermediate: True
         marker_topic: stomp_trajectory
         marker_namespace: optimized
-stomp/Dual_arm:
-  group_name: Dual_arm
+stomp/dual_arm:
+  group_name: dual_arm
   optimization:
     num_timesteps: 60
     num_iterations: 40
@@ -167,7 +167,7 @@ stomp/Dual_arm:
   task:
     noise_generator:
       - class: stomp_moveit/NormalDistributionSampling
-        stddev: [0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05]
+        stddev: [0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05]
     cost_functions:
       - class: stomp_moveit/CollisionCheck
         collision_penalty: 1.0

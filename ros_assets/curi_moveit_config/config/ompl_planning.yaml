@@ -280,7 +280,7 @@ right_hand:
     - AITstar
     - ABITstar
     - BITstar
-Dual_arm:
+dual_arm:
   planner_configs:
     - AnytimePathShortening
     - SBL
