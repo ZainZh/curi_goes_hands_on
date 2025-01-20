@@ -406,3 +406,21 @@ def download_file(remote_url, local_path):
     from urllib import request
 
     request.urlretrieve(remote_url, local_path)
+
+
+def list_to_pose(pose_list):
+    """Convert a list to a Pose msg.
+
+    Args:
+        pose_list (list): A list of 7 elements representing a pose.
+
+    Returns:
+        Pose: A Pose msg.
+    """
+    assert len(pose_list) == 7, print_error(
+        f"Length of the input list {len(pose_list)} is not 7"
+    )
+    pose = Pose()
+    pose.position = Point(*pose_list[:3])
+    pose.orientation = Quaternion(*pose_list[3:])
+    return pose

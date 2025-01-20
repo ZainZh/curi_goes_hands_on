@@ -19,7 +19,13 @@ from math import pi, tau, dist, fabs, cos
 from std_msgs.msg import String
 from moveit_commander.conversions import pose_to_list
 from shape_msgs.msg import SolidPrimitive
-from common import load_omega_config, print_info, print_debug, print_warning
+from common import (
+    load_omega_config,
+    print_info,
+    print_debug,
+    print_warning,
+    list_to_pose,
+)
 from typing import List
 import moveit_ros_planning_interface
 
@@ -168,28 +174,28 @@ class MoveItCURI(object):
         return pose_to_list(self.right_group.get_current_pose().pose)
 
     @property
-    def dual_arm_joint_state(self) -> List[float]:
+    def dual_arm_joint_state(self) -> List:
         """
         
-        Returns
+        Returns [left_arm_joint_state +right_arm_joint_state]
         -------
 
         """ """
 
         """
-        return self.dual_group.get_current_joint_values()
+        return self.left_arm_joint_state + self.right_arm_joint_state
 
     @property
-    def dual_arm_pose(self) -> List[float]:
+    def dual_arm_pose(self) -> List:
         """
         
-        Returns
+        Returns [left_arm_pose,right_arm_pose]
         -------
 
         """ """
 
         """
-        return pose_to_list(self.dual_group.get_current_pose().pose)
+        return self.left_arm_pose + self.right_arm_pose
 
     def is_all_close(self, goal, actual, tolerance):
         """
@@ -256,24 +262,28 @@ class MoveItCURI(object):
         current_joints = self.right_group.get_current_joint_values()
         return self.is_all_close(joint_goal, current_joints, 0.01)
 
-    def dual_arm_go_to_joint_state_test(self):
+    def dual_arm_go_through_pose(self, dual_arm_poses: List[List[float]]):
         """
-        Go to the joint state of the dual arm
-        input: joint_state: list[float] (14,)
+        Go to the pose of the dual arm
+        input: dual_arm_pose [[dual_arm_pose1], [dual_arm_pose2],...]
+            List[float] [[x, y, z, qx, qy, qz, qw,x, y, z, qx, qy, qz, qw]]
 
-        Output: bool
         """
-        joint_goal_left = self.left_group.get_current_pose()
-        joint_goal_right = self.right_group.get_current_pose()
+        self.dual_group.clear_pose_targets()
+        left_pose_msg_list = []
+        right_pose_msg_list = []
+        for dual_arm_pose in dual_arm_poses:
+            left_pose_msg = list_to_pose(dual_arm_pose[:7])
+            right_pose_msg = list_to_pose(dual_arm_pose[7:])
+            left_pose_msg_list.append(left_pose_msg)
+            right_pose_msg_list.append(right_pose_msg)
 
-        joint_goal_left.pose.position.y += 0.1
-        joint_goal_right.pose.position.y += 0.1
+        self.dual_group.set_pose_targets(left_pose_msg_list, self.left_eef_link)
+        self.dual_group.set_pose_targets(right_pose_msg_list, self.right_eef_link)
 
-        self.dual_group.set_pose_target(joint_goal_left, self.left_eef_link)
-        self.dual_group.set_pose_target(joint_goal_right, self.right_eef_link)
         traj = self.dual_group.plan()
         self.dual_group.execute(traj[1])
-        rospy.sleep(1)
+        self.dual_group.stop()
         self.go_default_pose()
 
 
@@ -286,7 +296,13 @@ if __name__ == "__main__":
     print("right_arm_pose: ", moveit_curi.right_arm_pose)
     # print("dual_arm_pose: ", moveit_curi.dual_arm_pose)
 
-    moveit_curi.dual_arm_go_to_joint_state_test()
+    current_dual_arm_pose = moveit_curi.dual_arm_pose
+    new_pose = copy.deepcopy(current_dual_arm_pose)
+
+    new_pose[2] += 0.1
+    new_pose[9] += 0.1
+    moveit_curi.dual_arm_go_through_pose([new_pose])
+    # moveit_curi.dual_arm_go_through_pose()
     # print(moveit_curi.left_arm_go_to_joint_state())
     # print(moveit_curi.right_arm_go_to_joint_state())
     # print(moveit_curi.right_arm_go_to_joint_state())
