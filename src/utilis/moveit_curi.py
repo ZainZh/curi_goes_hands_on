@@ -49,13 +49,38 @@ class MoveItCURI(object):
         self.dual_group_name = self.config["dual_arm_group"]
         self.dual_group = moveit_commander.MoveGroupCommander(self.dual_group_name)
         self.default_dual_arm_joint_state = self.config["default_dual_arm_joint_state"]
-        # self.dual_arm_plan = moveit_commander.Plan()
-        # self.init_state()
+
+        self.left_hand_group_name = self.config["left_hand_group"]
+        self.right_hand_group_name = self.config["right_hand_group"]
+        self.left_hand = moveit_commander.MoveGroupCommander(self.left_hand_group_name)
+        self.right_hand = moveit_commander.MoveGroupCommander(
+            self.right_hand_group_name
+        )
+
+        self.init_state()
+
+    def __del__(self):
+        moveit_commander.roscpp_shutdown()
+        moveit_commander.os._exit(0)
+
+    def go_default_pose(self):
+        self.left_group.set_named_target("default_pose")
+        self.right_group.set_named_target("default_pose")
+        self.left_hand.set_named_target("close")
+        self.right_hand.set_named_target("close")
+        self.left_group.go()
+        self.right_group.go()
+        self.left_hand.go()
+        self.right_hand.go()
 
     def init_state(self):
         # self.init_scene()
-        self.left_group.set_named_target("default_left_pose")
-        self.right_group.set_named_target("default_right_pose")
+        # self.left_group.set_goal_position_tolerance(0.01)
+        # self.left_group.set_goal_orientation_tolerance(0.01)
+        # self.left_group.set_planning_time(5)
+
+        self.go_default_pose()
+        self.dual_group.allow_replanning(True)
 
     def init_scene(self):
         """
@@ -231,22 +256,6 @@ class MoveItCURI(object):
         current_joints = self.right_group.get_current_joint_values()
         return self.is_all_close(joint_goal, current_joints, 0.01)
 
-    def dual_arm_go_to_joint_state(self, joint_state: List[float] = None):
-        """
-        Go to the joint state of the dual arm
-        input: joint_state: list[float] (14,)
-
-        Output: bool
-        """
-        if joint_state is None:
-            joint_state = self.default_dual_arm_joint_state
-            print_debug("No valid joint state, using default dual arm joint state.")
-
-        self.dual_group.go(joint_state, wait=True)
-        self.dual_group.stop()
-        current_joints = self.dual_group.get_current_joint_values()
-        return self.is_all_close(joint_state, current_joints, 0.01)
-
     def dual_arm_go_to_joint_state_test(self):
         """
         Go to the joint state of the dual arm
@@ -257,14 +266,16 @@ class MoveItCURI(object):
         joint_goal_left = self.left_group.get_current_pose()
         joint_goal_right = self.right_group.get_current_pose()
 
-        joint_goal_left.pose.position.z += 0.1
-        joint_goal_right.pose.position.z += 0.1
+        joint_goal_left.pose.position.y += 0.1
+        joint_goal_right.pose.position.y += 0.1
 
         self.dual_group.set_pose_target(joint_goal_left, self.left_eef_link)
         self.dual_group.set_pose_target(joint_goal_right, self.right_eef_link)
         traj = self.dual_group.plan()
         self.dual_group.execute(traj[1])
         rospy.sleep(1)
+        self.go_default_pose()
+
 
 if __name__ == "__main__":
     moveit_curi = MoveItCURI()

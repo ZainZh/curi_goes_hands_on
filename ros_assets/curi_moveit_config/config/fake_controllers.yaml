@@ -48,6 +48,10 @@ controller_list:
       - panda_right_finger_joint1
 initial:  # Define initial robot poses per group
   - group: left_arm
-    pose: default_left_pose
+    pose: default_pose
+  - group: left_hand
+    pose: open
   - group: right_arm
-    pose: default_right_pose
+    pose: default_pose
+  - group: right_hand
+    pose: open
