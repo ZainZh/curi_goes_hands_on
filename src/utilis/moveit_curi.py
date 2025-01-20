@@ -32,7 +32,9 @@ class MoveItCURI(object):
         rospy.init_node("moveit_curi", anonymous=True)
         self.robot = moveit_commander.RobotCommander()
         self.scene = moveit_commander.PlanningSceneInterface()
-        self.scene_pub = rospy.Publisher("planning_scene", moveit_msgs.PlanningScene, queue_size=10)
+        self.scene_pub = rospy.Publisher(
+            "planning_scene", moveit_msgs.PlanningScene, queue_size=10
+        )
 
         self.left_group_name = self.config["left_arm_group"]
         self.left_group = moveit_commander.MoveGroupCommander(self.left_group_name)
@@ -47,11 +49,13 @@ class MoveItCURI(object):
         self.dual_group_name = self.config["dual_arm_group"]
         self.dual_group = moveit_commander.MoveGroupCommander(self.dual_group_name)
         self.default_dual_arm_joint_state = self.config["default_dual_arm_joint_state"]
+        # self.dual_arm_plan = moveit_commander.Plan()
         # self.init_state()
 
     def init_state(self):
         # self.init_scene()
-        self.dual_arm_go_to_joint_state(self.default_dual_arm_joint_state)
+        self.left_group.set_named_target("default_left_pose")
+        self.right_group.set_named_target("default_right_pose")
 
     def init_scene(self):
         """
@@ -78,7 +82,9 @@ class MoveItCURI(object):
         planning_scene.is_diff = True
         planning_scene.world.collision_objects.append(table_object)
 
-        planning_scene_interface = moveit_ros_planning_interface.PlanningSceneInterface()
+        planning_scene_interface = (
+            moveit_ros_planning_interface.PlanningSceneInterface()
+        )
         planning_scene_interface.applyCollisionObject(table_object)
 
     def go_to_joint_state(self, joint_state, group_name="left_arm"):
@@ -251,14 +257,14 @@ class MoveItCURI(object):
         joint_goal_left = self.left_group.get_current_pose()
         joint_goal_right = self.right_group.get_current_pose()
 
-        joint_goal_left.pose.position.z += 0.2
-        joint_goal_right.pose.position.z -= 0.2
+        joint_goal_left.pose.position.z += 0.1
+        joint_goal_right.pose.position.z += 0.1
 
         self.dual_group.set_pose_target(joint_goal_left, self.left_eef_link)
         self.dual_group.set_pose_target(joint_goal_right, self.right_eef_link)
-        self.dual_group.go(wait=True)
-        self.dual_group.stop()
-
+        traj = self.dual_group.plan()
+        self.dual_group.execute(traj[1])
+        rospy.sleep(1)
 
 if __name__ == "__main__":
     moveit_curi = MoveItCURI()
@@ -270,7 +276,7 @@ if __name__ == "__main__":
     # print("dual_arm_pose: ", moveit_curi.dual_arm_pose)
 
     moveit_curi.dual_arm_go_to_joint_state_test()
-    # print(moveit_curi.go_left_arm_to_joint_state())
+    # print(moveit_curi.left_arm_go_to_joint_state())
     # print(moveit_curi.right_arm_go_to_joint_state())
     # print(moveit_curi.right_arm_go_to_joint_state())
     # print(moveit_curi.dual_arm_go_to_joint_state())
